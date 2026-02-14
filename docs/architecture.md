@@ -1,88 +1,88 @@
-# Архитектура LINSTOR и оценка конфигурации
+# LINSTOR architecture and configuration overview
 
-## Назначение компонентов LINSTOR
+## Component roles
 
-### 1. Controller (Контроллер)
+### 1. Controller
 
-**Роль:** Центральный орган управления кластером LINSTOR
+**Role:** Central management for the LINSTOR cluster
 
-**Функции:**
-- Управление метаданными кластера (resource definitions, volume definitions)
-- Координация операций между satellite узлами
-- Предоставление REST API (порт 3370) для управления кластером
-- Управление репликацией и размещением данных
-- Отслеживание состояния всех узлов и ресурсов
+**Functions:**
+- Cluster metadata (resource definitions, volume definitions)
+- Coordination between satellite nodes
+- REST API (port 3370) for cluster management
+- Replication and data placement
+- State of all nodes and resources
 
-**Технические детали:**
-- Сервис: `linstor-controller.service`
-- Порты: 3370 (REST API), 3376 (коммуникация с satellites)
-- Тип узла: `Controller` (чистый контроллер) или `Combined` (контроллер + satellite)
+**Details:**
+- Service: `linstor-controller.service`
+- Ports: 3370 (REST API), 3376 (satellite communication)
+- Node type: `Controller` (controller only) or `Combined` (controller + satellite)
 
-**Когда использовать:**
-- Минимум 1 контроллер (рекомендуется 3 для HA)
-- Контроллеры не хранят данные, только управляют кластером
-- Для высокой доступности рекомендуется нечетное количество (1, 3, 5)
+**When to use:**
+- At least 1 controller (3 recommended for HA)
+- Controllers do not store data, only manage the cluster
+- Odd number (1, 3, 5) recommended for HA
 
-### 2. Satellite (Спутниковый узел)
+### 2. Satellite
 
-**Роль:** Узлы, которые хранят и реплицируют данные
+**Role:** Nodes that store and replicate data
 
-**Функции:**
-- Хранение данных на локальных дисках
-- Репликация данных через DRBD на другие satellite узлы
-- Выполнение команд от контроллера
-- Управление локальными storage pools
-- Предоставление блочных устройств для приложений
+**Functions:**
+- Store data on local disks
+- Replicate data via DRBD to other satellites
+- Execute controller commands
+- Manage local storage pools
+- Expose block devices to applications
 
-**Технические детали:**
-- Сервис: `linstor-satellite.service`
-- Порты: 3366 (коммуникация с контроллером), 7000-8000 (DRBD репликация)
-- Тип узла: `Satellite` (чистый satellite) или `Combined` (контроллер + satellite)
-- Автоматически создает file-thin storage pool
+**Details:**
+- Service: `linstor-satellite.service`
+- Ports: 3366 (controller), 7000–8000 (DRBD replication)
+- Node type: `Satellite` (satellite only) or `Combined` (controller + satellite)
+- Automatically creates file-thin storage pool
 
-**Когда использовать:**
-- Все узлы, которые должны хранить данные
-- Минимум 2 satellite для репликации
-- Могут работать как Combined узлы (controller + satellite)
+**When to use:**
+- All nodes that should store data
+- At least 2 satellites for replication
+- Can run as Combined (controller + satellite)
 
-### 3. Storage Pool (Пул хранения)
+### 3. Storage pool
 
-**Роль:** Определяет, какие узлы предоставляют блочное хранилище
+**Role:** Defines which nodes provide block storage
 
-**Функции:**
-- Создание LVM volume group `drbdpool` на указанном диске
-- Создание LVM thin pool `thinpool` (50% от VG)
-- Регистрация lvm-thin storage pool в LINSTOR
-- Предоставление высокопроизводительного блочного хранилища
+**Functions:**
+- Create LVM volume group `drbdpool` on the given disk
+- Create LVM thin pool `thinpool` (e.g. 50% of VG)
+- Register lvm-thin storage pool in LINSTOR
+- Provide higher-performance block storage
 
-**Технические детали:**
-- Требует: неиспользуемый блочный диск (`drbd_backing_disk`)
-- Создает: VG `drbdpool` → Thin Pool `thinpool` → LINSTOR pool `lvm-thin`
-- Если диск не указан: создается только file-thin pool (менее производительный)
+**Details:**
+- Requires: unused block disk (`drbd_backing_disk`)
+- Creates: VG `drbdpool` → thin pool `thinpool` → LINSTOR pool `lvm-thin`
+- If no disk: only file-thin pool (lower performance)
 
-**Когда использовать:**
-- Узлы с выделенными дисками для хранения
-- Для production окружений (lvm-thin быстрее file-thin)
-- Не обязательно для всех satellite узлов
+**When to use:**
+- Nodes with dedicated storage disks
+- Production (lvm-thin is faster than file-thin)
+- Not required on every satellite
 
-## Типы узлов в LINSTOR
+## Node types in LINSTOR
 
-### Controller (чистый контроллер)
-- Только управление, не хранит данные
-- Создается, если узел в группе `controller`, но НЕ в группе `satellite`
+### Controller (controller only)
+- Management only, no data storage
+- Created when host is in `controller` but NOT in `satellite`
 
-### Satellite (чистый спутник)
-- Только хранение данных, не управляет кластером
-- Создается, если узел в группе `satellite`, но НЕ в группе `controller`
+### Satellite (satellite only)
+- Data storage only, does not manage cluster
+- Created when host is in `satellite` but NOT in `controller`
 
-### Combined (комбинированный)
-- И контроллер, и спутник одновременно
-- Создается, если узел одновременно в группах `controller` И `satellite`
-- Полезно для небольших кластеров (экономия ресурсов)
+### Combined
+- Both controller and satellite
+- Created when host is in both `controller` and `satellite`
+- Useful for small clusters (saves resources)
 
-## Оценка текущей конфигурации
+## Example configuration
 
-### Текущий hosts.ini:
+### Example inventory:
 
 ```ini
 [controller]
@@ -105,93 +105,60 @@ satellite
 192.168.1.23
 ```
 
-### ✅ Положительные стороны:
+### Pros
 
-1. **Разделение ролей:**
-   - 3 контроллера отдельно от satellite узлов
-   - Четкое разделение функций управления и хранения
+1. **Role separation:** 3 controllers separate from satellites; clear split between management and storage.
+2. **Controller HA:** 3 controllers give HA (odd number for quorum); cluster keeps running if one fails.
+3. **Storage scale:** 3 satellites for replication; 2–3 replicas possible.
+4. **Storage pools:** All satellites provide block storage; lvm-thin pool on each node.
 
-2. **Высокая доступность контроллеров:**
-   - 3 контроллера обеспечивают HA (нечетное количество для кворума)
-   - При отказе одного контроллера кластер продолжит работу
+### Considerations
 
-3. **Масштабируемость хранения:**
-   - 3 satellite узла для репликации данных
-   - Возможность репликации 2-3 копии данных
+1. **No Combined nodes:** One controller failure is tolerated; for very small clusters, Combined can save resources.
+2. **All satellites in storage pool:** Ensure each satellite has a free disk (`drbd_backing_disk`); remove from `linstor_storage_pool` if not.
+3. **Replication network:** Set `drbd_replication_network` correctly; use a dedicated network (not management).
+4. **Replication:** With 3 satellites you can use 2 or 3 replicas; 3 replicas need at least 3 satellites.
 
-4. **Storage pools настроены:**
-   - Все satellite узлы предоставляют блочное хранилище
-   - Будет создан lvm-thin pool на каждом узле
-
-### ⚠️ Потенциальные проблемы и рекомендации:
-
-1. **Нет Combined узлов:**
-   - Если один из контроллеров упадет, кластер продолжит работу (хорошо)
-   - Но для очень маленьких кластеров можно использовать Combined узлы для экономии
-
-2. **Все satellite в storage pool:**
-   - Убедитесь, что на каждом satellite узле есть свободный диск (`drbd_backing_disk`)
-   - Если диска нет на каком-то узле, уберите его из `linstor_storage_pool`
-
-3. **Сеть репликации:**
-   - Проверьте, что `drbd_replication_network` настроена правильно
-   - Рекомендуется отдельная сеть для репликации (не management сеть)
-
-4. **Минимальная конфигурация для репликации:**
-   - С 3 satellite можно создать ресурсы с репликацией 2 или 3 копии
-   - Для репликации 3 копии нужно минимум 3 satellite узла ✅
-
-### 📊 Архитектурная схема:
+### Architecture diagram
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    LINSTOR Cluster                        │
 ├─────────────────────────────────────────────────────────┤
-│                                                           │
-│  Controllers (Management Layer)                          │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
-│  │ .1.11    │  │ .1.12    │  │ .1.13    │                │
-│  │Controller│  │Controller│  │Controller│                │
-│  └──────────┘  └──────────┘  └──────────┘                │
-│       │              │              │                     │
-│       └──────────────┴──────────────┘                     │
-│                    │                                      │
-│                    ▼                                      │
-│  Satellites (Storage Layer)                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
-│  │ .1.21    │  │ .1.22    │  │ .1.23    │                │
+│                                                          │
+│  Controllers (Management Layer)                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
+│  │ .1.11    │  │ .1.12    │  │ .1.13    │               │
+│  │Controller│  │Controller│  │Controller│               │
+│  └──────────┘  └──────────┘  └──────────┘               │
+│       │              │              │                    │
+│       └──────────────┴──────────────┘                    │
+│                    │                                     │
+│                    ▼                                     │
+│  Satellites (Storage Layer)                              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
+│  │ .1.21    │  │ .1.22    │  │ .1.23    │               │
 │  │ Satellite│  │ Satellite│  │ Satellite│                │
 │  │ +Storage │  │ +Storage │  │ +Storage │                │
 │  │  Pool    │  │  Pool    │  │  Pool    │                │
 │  └──────────┘  └──────────┘  └──────────┘                │
-│       │              │              │                     │
-│       └──────────────┴──────────────┘                     │
-│              DRBD Replication                             │
-│                                                           │
+│       │              │              │                    │
+│       └──────────────┴──────────────┘                    │
+│              DRBD Replication                            │
+│                                                          │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 🎯 Рекомендации по улучшению:
+### Recommendations
 
-1. **Для production:**
-   - ✅ Текущая конфигурация хороша
-   - Рассмотрите добавление еще одного satellite для большей отказоустойчивости
+1. **Production:** This layout is good; consider one more satellite for resilience.
+2. **Test/dev:** Combined nodes (controller + satellite on one host) are fine; minimum: 1 Combined or 1 Controller + 2 Satellites.
+3. **Monitoring:** Monitor all nodes; controllers are critical.
+4. **Backup:** Back up controller metadata; use replication between satellites.
 
-2. **Для тестирования/разработки:**
-   - Можно использовать Combined узлы (controller + satellite на одном хосте)
-   - Минимум: 1 Combined узел или 1 Controller + 2 Satellite
+### Optional: Combined example
 
-3. **Мониторинг:**
-   - Настройте мониторинг всех 6 узлов
-   - Особенно важно отслеживать состояние контроллеров
-
-4. **Резервное копирование:**
-   - Регулярно делайте бэкапы метаданных контроллеров
-   - Настройте репликацию данных между satellite узлами
-
-### 📝 Пример улучшенной конфигурации (опционально):
-
-Если хотите использовать Combined узлы для экономии ресурсов:
+To use Combined nodes and save resources:
 
 ```ini
 [controller]
@@ -220,7 +187,4 @@ satellite
 192.168.1.23
 ```
 
-**Итоговая оценка:** ⭐⭐⭐⭐⭐ (5/5)
-
-Текущая конфигурация отлично подходит для production окружения с высокой доступностью и масштабируемостью.
-
+This configuration is suitable for production with high availability and scalability.

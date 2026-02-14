@@ -1,441 +1,439 @@
-# Процесс установки LINSTOR
+# LINSTOR installation process
 
-Подробное описание этапов установки кластера LINSTOR с помощью Ansible playbook.
+Detailed description of the steps to install a LINSTOR cluster with the Ansible playbook.
 
-## Обзор
+## Overview
 
-Playbook `ubuntu.yaml` выполняет установку в следующем порядке:
+Playbook `ubuntu.yaml` runs the installation in this order:
 
-1. Подготовка окружения
-2. Проверка системы
-3. Инициализация дисков
-4. Установка пакетов
-5. Настройка Controller
-6. Настройка Satellite
-7. Регистрация узлов
-8. Создание storage pools
-9. Установка GUI
+1. Environment preparation
+2. System check
+3. Disk initialization
+4. Package installation
+5. Controller setup
+6. Satellite setup
+7. Node registration
+8. Storage pool creation
+9. GUI installation
 
-## Этап 1: Подготовка окружения
+## Stage 1: Environment preparation
 
 **Play:** `linstor_cluster`  
-**Файл:** `ubuntu.yaml` (строки 2-10)
+**File:** `ubuntu.yaml` (lines 2–10)
 
-### Задачи:
+### Tasks
 
-- Создание временной директории `/tmp/ansible-tmp` с правами 1777 на всех узлах кластера
-- Эта директория используется Ansible для временных файлов во время выполнения задач
+- Create temporary directory `/tmp/ansible-tmp` with mode 1777 on all cluster nodes
+- This directory is used by Ansible for temporary files during task execution
 
-### Выходные данные:
+### Output
 
-- Директория `/tmp/ansible-tmp` создана на всех узлах
-
----
-
-## Этап 2: Проверка системы
-
-**Play:** `linstor_cluster` (через роль `commons/os-checker`)  
-**Файл:** `roles/commons/os-checker/tasks/main.yaml`
-
-### Задачи:
-
-1. **Проверка ОС:**
-   - Определение типа ОС из `/etc/os-release`
-   - Проверка, что это Ubuntu
-   - Остановка выполнения, если ОС не Ubuntu
-
-2. **Проверка версии Ubuntu:**
-   - Извлечение версии из `/etc/os-release`
-   - Проверка, что версия >= 24.04
-   - Остановка выполнения, если версия < 24.04
-
-3. **Проверка дисков:**
-   - Получение списка дисков из секции `[drbd]` в inventory
-   - Проверка наличия каждого диска (`/dev/sdb`, `/dev/sdc` и т.д.)
-   - Вывод списка доступных дисков для отладки
-   - Остановка выполнения, если диски не найдены
-
-### Выходные данные:
-
-- Переменная `found_disks` содержит список найденных дисков
-- Ошибка, если система не соответствует требованиям
-
-### Обработка ошибок:
-
-Если диски не найдены, playbook выводит подробные инструкции:
-- Как проверить доступные диски (`lsblk`)
-- Как добавить диск к виртуальной машине
-- Как обновить inventory или переменные
+- Directory `/tmp/ansible-tmp` exists on all nodes
 
 ---
 
-## Этап 3: Инициализация дисков
+## Stage 2: System check
+
+**Play:** `linstor_cluster` (via role `commons/os-checker`)  
+**File:** `roles/commons/os-checker/tasks/main.yaml`
+
+### Tasks
+
+1. **OS check**
+   - Detect OS type from `/etc/os-release`
+   - Ensure it is Ubuntu
+   - Fail if OS is not Ubuntu
+
+2. **Ubuntu version check**
+   - Read version from `/etc/os-release`
+   - Ensure version >= 24.04
+   - Fail if version < 24.04
+
+3. **Disk check**
+   - Get disk list from inventory `[drbd]` section
+   - Check presence of each disk (`/dev/sdb`, `/dev/sdc`, etc.)
+   - Print list of available disks for debugging
+   - Fail if disks are not found
+
+### Output
+
+- Variable `found_disks` contains the list of found disks
+- Error if system does not meet requirements
+
+### Error handling
+
+If disks are not found, the playbook prints detailed instructions:
+- How to check available disks (`lsblk`)
+- How to add a disk to a VM
+- How to update inventory or variables
+
+---
+
+## Stage 3: Disk initialization
 
 **Play:** `linstor_storage_pool`  
-**Файл:** `ubuntu.yaml` (строки 14-20), `roles/linstor/storage-pool/tasks/disks.yaml`
+**File:** `ubuntu.yaml` (lines 14–20), `roles/linstor/storage-pool/tasks/disks.yaml`
 
-### Задачи:
+### Tasks
 
-1. **Создание Physical Volumes (PV):**
-   - Проверка существования PV на каждом диске
-   - Создание PV на дисках без PV (`pvcreate`)
+1. **Create Physical Volumes (PV)**
+   - Check for existing PV on each disk
+   - Create PV on disks without PV (`pvcreate`)
 
-2. **Создание Volume Group (VG):**
-   - Проверка существования VG `drbdpool`
-   - Создание VG `drbdpool` со всеми найденными дисками (`vgcreate`)
-   - Расширение существующей VG новыми дисками (`vgextend`)
+2. **Create Volume Group (VG)**
+   - Check for existing VG `drbdpool`
+   - Create VG `drbdpool` with all found disks (`vgcreate`)
+   - Extend existing VG with new disks (`vgextend`)
 
-3. **Создание Thin Pool:**
-   - Проверка существования thin pool `drbdpool/thinpool`
-   - Создание thin pool размером 95% от VG (`lvcreate -l 95%VG -T`)
+3. **Create thin pool**
+   - Check for existing thin pool `drbdpool/thinpool`
+   - Create thin pool at 95% of VG size (`lvcreate -l 95%VG -T`)
 
-4. **Настройка I/O Scheduler:**
-   - Установка scheduler `mq-deadline` для каждого диска
-   - Отключение `add_random` (установка в 0)
-   - Включение `nomerges` (установка в 1)
+4. **I/O scheduler**
+   - Set scheduler `mq-deadline` for each disk
+   - Disable `add_random` (set to 0)
+   - Enable `nomerges` (set to 1)
 
-### Выходные данные:
+### Output
 
-- PV созданы на всех дисках
-- VG `drbdpool` создана или расширена
-- Thin pool `drbdpool/thinpool` создан (95% от VG)
-- I/O scheduler настроен для всех дисков
+- PVs created on all disks
+- VG `drbdpool` created or extended
+- Thin pool `drbdpool/thinpool` created (95% of VG)
+- I/O scheduler configured for all disks
 
-### Важно:
+### Note
 
-Этот этап выполняется **ДО** создания узлов LINSTOR, так как это локальные операции, не требующие подключения к кластеру.
-
----
-
-## Этап 4: Установка пакетов
-
-**Play:** `controller` и `satellite` (через роль `commons/pre-install`)  
-**Файл:** `roles/commons/pre-install/tasks/pkg.yaml`
-
-### Задачи:
-
-1. **Очистка конфликтующих конфигураций:**
-   - Поиск существующих файлов PPA LINBIT в `/etc/apt/sources.list.d/`
-   - Поиск файлов с упоминанием `linbit` по содержимому
-   - Удаление найденных конфликтующих конфигураций
-   - Удаление старых GPG ключей LINBIT
-
-2. **Установка зависимостей:**
-   - Установка заголовков ядра (`linux-headers-$(uname -r)`)
-   - Установка `software-properties-common` (для `add-apt-repository`)
-
-3. **Настройка репозитория:**
-   - Добавление PPA репозитория LINBIT (`ppa:linbit/linbit-drbd9-stack`)
-   - Обновление apt cache
-
-4. **Установка пакетов:**
-   - `drbd-utils` - утилиты DRBD
-   - `drbd-dkms` - модуль ядра DRBD (DKMS)
-   - `lvm2` - Logical Volume Manager
-   - Пакеты из переменной `lb_deb_pkgs` (если определена)
-
-5. **Загрузка модуля DRBD:**
-   - Загрузка модуля `drbd` в ядро (`modprobe drbd`)
-   - Настройка автоматической загрузки при загрузке системы (`/etc/modules-load.d/drbd.conf`)
-
-### Выходные данные:
-
-- Все необходимые пакеты установлены
-- Модуль DRBD загружен и настроен для автозагрузки
-- Репозиторий LINBIT настроен
+This stage runs **before** LINSTOR nodes are created, as these are local operations and do not require cluster connectivity.
 
 ---
 
-## Этап 5: Настройка Controller
+## Stage 4: Package installation
+
+**Play:** `controller` and `satellite` (via role `commons/pre-install`)  
+**File:** `roles/commons/pre-install/tasks/pkg.yaml`
+
+### Tasks
+
+1. **Clean conflicting configs**
+   - Find existing LINBIT PPA files in `/etc/apt/sources.list.d/`
+   - Find files mentioning `linbit` by content
+   - Remove found conflicting configs
+   - Remove old LINBIT GPG keys
+
+2. **Install dependencies**
+   - Install kernel headers (`linux-headers-$(uname -r)`)
+   - Install `software-properties-common` (for `add-apt-repository`)
+
+3. **Repository setup**
+   - Add LINBIT PPA (`ppa:linbit/linbit-drbd9-stack`)
+   - Update apt cache
+
+4. **Install packages**
+   - `drbd-utils` — DRBD utilities
+   - `drbd-dkms` — DRBD kernel module (DKMS)
+   - `lvm2` — Logical Volume Manager
+   - Packages from variable `lb_deb_pkgs` (if defined)
+
+5. **Load DRBD module**
+   - Load `drbd` kernel module (`modprobe drbd`)
+   - Enable load at boot (`/etc/modules-load.d/drbd.conf`)
+
+### Output
+
+- All required packages installed
+- DRBD module loaded and configured for autoload
+- LINBIT repository configured
+
+---
+
+## Stage 5: Controller setup
 
 **Play:** `controller`  
-**Файл:** `roles/linstor/controller/tasks/main.yaml`
+**File:** `roles/linstor/controller/tasks/main.yaml`
 
-### Задачи:
+### Tasks
 
-1. **Проверка и запуск сервиса:**
-   - Проверка существования сервиса `linstor-controller`
-   - Включение и запуск сервиса (`systemctl enable --now`)
-   - Ожидание готовности сервиса (порт 3370)
+1. **Check and start service**
+   - Check that service `linstor-controller` exists
+   - Enable and start service (`systemctl enable --now`)
+   - Wait for service readiness (port 3370)
 
-2. **Регистрация Satellite узлов:**
-   - Определение первого контроллера
-   - Для каждого узла из группы `[satellite]`:
-     - Определение имени узла (`ansible_nodename` или IP)
-     - Определение IP адреса из сети `drbd_replication_network`
-     - Определение типа узла (Combined, если узел также в группе controller)
-     - Создание узла в LINSTOR (`linstor node create`)
-   - Ожидание подключения satellite узлов
+2. **Register satellite nodes**
+   - Identify first controller
+   - For each host in group `[satellite]`:
+     - Get node name (`ansible_nodename` or IP)
+     - Get IP from `drbd_replication_network`
+     - Determine node type (Combined if host is also in controller group)
+     - Create node in LINSTOR (`linstor node create`)
+   - Wait for satellites to connect
 
-3. **Проверка статуса:**
-   - Проверка статуса узлов через `linstor node list`
-   - Вывод результатов регистрации
+3. **Status check**
+   - Check node status via `linstor node list`
+   - Print registration results
 
-### Выходные данные:
+### Output
 
-- Сервис `linstor-controller` запущен и включен
-- Все satellite узлы зарегистрированы в кластере
-- Узлы подключены к контроллеру
+- Service `linstor-controller` started and enabled
+- All satellite nodes registered in the cluster
+- Nodes connected to controller
 
-### Логика определения типа узла:
+### Node type logic
 
-- **Combined**: если узел находится в группах `[controller]` И `[satellite]`
-- **Satellite**: если узел находится только в группе `[satellite]`
-- **Controller**: если узел находится только в группе `[controller]` (не регистрируется как satellite)
+- **Combined**: host is in both `[controller]` and `[satellite]`
+- **Satellite**: host is only in `[satellite]`
+- **Controller**: host is only in `[controller]` (not registered as satellite)
 
 ---
 
-## Этап 6: Настройка Satellite
+## Stage 6: Satellite setup
 
 **Play:** `satellite`  
-**Файл:** `roles/linstor/satellite/tasks/main.yaml`
+**File:** `roles/linstor/satellite/tasks/main.yaml`
 
-### Задачи:
+### Tasks
 
-1. **Проверка и запуск сервиса:**
-   - Проверка существования сервиса `linstor-satellite`
-   - Включение и запуск сервиса (`systemctl enable --now`)
+1. **Check and start service**
+   - Check that service `linstor-satellite` exists
+   - Enable and start service (`systemctl enable --now`)
 
-2. **Настройка конфигурации:**
-   - Создание директории `/etc/linstor` (если не существует)
-   - Создание файла `/etc/linstor/linstor-client.conf` с IP адресами всех контроллеров
-   - Перезапуск сервиса после обновления конфигурации
+2. **Configuration**
+   - Create directory `/etc/linstor` if missing
+   - Create `/etc/linstor/linstor-client.conf` with all controller IPs
+   - Restart service after config update
 
-### Формат конфигурации:
+### Config format
 
 ```ini
 [global]
 controllers=192.168.1.11,192.168.1.12,192.168.1.13
 ```
 
-### Выходные данные:
+### Output
 
-- Сервис `linstor-satellite` запущен и включен
-- Конфигурация `/etc/linstor/linstor-client.conf` создана
-- Сервис перезапущен с новой конфигурацией
+- Service `linstor-satellite` started and enabled
+- Config `/etc/linstor/linstor-client.conf` created
+- Service restarted with new config
 
 ---
 
-## Этап 7: Регистрация узлов
+## Stage 7: Node registration
 
-**Play:** `controller` (часть этапа 5)  
-**Файл:** `roles/linstor/controller/tasks/main.yaml`
+**Play:** `controller` (part of stage 5)  
+**File:** `roles/linstor/controller/tasks/main.yaml`
 
-Этот этап выполняется как часть настройки Controller (этап 5), но выделен отдельно для ясности.
+This stage runs as part of Controller setup (stage 5) but is listed separately for clarity.
 
-### Процесс:
+### Process
 
-1. Controller запущен и готов принимать подключения
-2. Satellite узлы запущены и настроены
-3. Controller регистрирует каждый satellite узел командой:
+1. Controller is up and accepting connections
+2. Satellite nodes are up and configured
+3. Controller registers each satellite with:
    ```bash
    linstor node create <node-name> <ip-address> --node-type <type>
    ```
-4. Satellite узлы подключаются к контроллеру автоматически
-5. Ожидание подключения всех узлов (таймаут 60 секунд)
+4. Satellites connect to the controller automatically
+5. Wait for all nodes to connect (60s timeout)
 
-### Выходные данные:
+### Output
 
-- Все узлы зарегистрированы в кластере
-- Все узлы подключены к контроллеру
-- Статус узлов: `ONLINE`
+- All nodes registered in the cluster
+- All nodes connected to the controller
+- Node status: `ONLINE`
 
 ---
 
-## Этап 8: Создание Storage Pools
+## Stage 8: Storage pool creation
 
 **Play:** `linstor_storage_pool`  
-**Файл:** `ubuntu.yaml` (строки 37-74), `roles/linstor/storage-pool/tasks/main.yaml`
+**File:** `ubuntu.yaml` (lines 37–74), `roles/linstor/storage-pool/tasks/main.yaml`
 
-### Задачи:
+### Tasks
 
-1. **Ожидание готовности:**
-   - Ожидание готовности контроллера (порт 3370)
-   - Ожидание подключения всех satellite узлов
+1. **Wait for readiness**
+   - Wait for controller (port 3370)
+   - Wait for all satellites to connect
 
-2. **Проверка инициализации дисков:**
-   - Проверка существования thin pool `drbdpool/thinpool`
-   - Остановка выполнения, если thin pool не найден
+2. **Check disk initialization**
+   - Check that thin pool `drbdpool/thinpool` exists
+   - Fail if thin pool not found
 
-3. **Создание storage pool:**
-   - Определение имени узла (`ansible_nodename` или IP)
-   - Создание lvm-thin storage pool на первом контроллере:
+3. **Create storage pool**
+   - Get node name (`ansible_nodename` or IP)
+   - Create lvm-thin storage pool from first controller:
      ```bash
      linstor storage-pool create lvmthin <node-name> lvm-thin drbdpool/thinpool
      ```
-   - Вывод результатов создания
+   - Print creation result
 
-### Выходные данные:
+### Output
 
-- Storage pool `lvm-thin` создан на каждом узле из группы `linstor_storage_pool`
-- Storage pool использует thin pool `drbdpool/thinpool`
+- Storage pool `lvm-thin` created on each host in `linstor_storage_pool`
+- Pool uses thin pool `drbdpool/thinpool`
 
-### Обработка ошибок:
+### Error handling
 
-- Код возврата 0: успешное создание
-- Код возврата 10: storage pool уже существует (не ошибка)
-- Другие коды: ошибка создания
+- Exit code 0: created successfully
+- Exit code 10: pool already exists (not an error)
+- Other codes: creation failed
 
 ---
 
-## Этап 9: Установка GUI
+## Stage 9: GUI installation
 
 **Play:** `admin`  
-**Файл:** `roles/linstor/gui/tasks/main.yaml`
+**File:** `roles/linstor/gui/tasks/main.yaml`
 
-### Задачи:
+### Tasks
 
-1. **Ожидание готовности контроллеров:**
-   - Ожидание готовности всех контроллеров (порт 3370)
+1. **Wait for controllers**
+   - Wait for all controllers (port 3370)
 
-2. **Попытка установки пакета:**
-   - Обновление apt cache
-   - Проверка доступности пакета `linstor-gui`
-   - Установка пакета (если доступен)
-   - Проверка существования сервиса `linstor-gui`
+2. **Attempt package install**
+   - Update apt cache
+   - Check availability of package `linstor-gui`
+   - Install if available
+   - Check that service `linstor-gui` exists
 
-3. **Запуск через systemd (если пакет установлен):**
-   - Включение и запуск сервиса `linstor-gui`
+3. **Run via systemd (if package installed)**
+   - Enable and start service `linstor-gui`
 
-4. **Альтернатива через Docker (если пакет недоступен):**
-   - Проверка наличия Docker контейнера
-   - Установка Docker и Docker Compose (если не установлены)
-   - Создание директории `/opt/linstor-gui`
-   - Создание `docker-compose.yml` с образом `linbit/linstor-gui:latest`
-   - Запуск контейнера через `docker-compose` или `docker compose`
+4. **Docker fallback (if package unavailable)**
+   - Check for Docker container
+   - Install Docker and Docker Compose if missing
+   - Create directory `/opt/linstor-gui`
+   - Create `docker-compose.yml` with image `linbit/linstor-gui:latest`
+   - Start container with `docker-compose` or `docker compose`
 
-### Важно:
+### Note
 
-**LINSTOR GUI встроен в контроллер** и доступен через веб-интерфейс на порту 3370 по пути `/ui/`. Пакет `linstor-gui` содержит только статические файлы веб-интерфейса.
+**LINSTOR GUI is built into the controller** and is available on port 3370 at `/ui/`. The `linstor-gui` package only contains static web UI files.
 
-### Доступ к GUI:
+### GUI access
 
-После установки GUI доступен по адресу:
+After installation, GUI is available at:
 ```
 http://<controller-ip>:3370/ui/
 ```
 
-**Учетные данные по умолчанию:**
+**Default credentials:**
 - Username: `admin`
 - Password: `admin`
 
-### Выходные данные:
+### Output
 
-- GUI установлен и доступен через контроллер
-- URL для доступа: `http://<controller-ip>:3370/ui/`
+- GUI installed and available via controller
+- URL: `http://<controller-ip>:3370/ui/`
 
 ---
 
-## Последовательность выполнения
+## Execution order
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. Подготовка окружения (linstor_cluster)                  │
-│    └─> Создание /tmp/ansible-tmp                            │
+│ 1. Environment preparation (linstor_cluster)               │
+│    └─> Create /tmp/ansible-tmp                              │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. Проверка системы (linstor_cluster)                       │
-│    └─> Проверка Ubuntu 24.04+, проверка дисков              │
+│ 2. System check (linstor_cluster)                           │
+│    └─> Check Ubuntu 24.04+, check disks                     │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. Инициализация дисков (linstor_storage_pool)             │
-│    └─> PV, VG, thin pool, I/O scheduler                      │
+│ 3. Disk initialization (linstor_storage_pool)                 │
+│    └─> PV, VG, thin pool, I/O scheduler                     │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. Установка пакетов (controller + satellite)               │
-│    └─> DRBD, LVM, LINSTOR компоненты                        │
+│ 4. Package installation (controller + satellite)            │
+│    └─> DRBD, LVM, LINSTOR components                        │
 └─────────────────────────────────────────────────────────────┘
                             ↓
         ┌───────────────────┴───────────────────┐
         ↓                                       ↓
 ┌──────────────────────┐          ┌──────────────────────┐
-│ 5. Настройка         │          │ 6. Настройка        │
-│    Controller        │          │    Satellite         │
-│    └─> Запуск        │          │    └─> Запуск       │
-│        сервиса       │          │        сервиса      │
+│ 5. Controller setup  │          │ 6. Satellite setup   │
+│    └─> Start service │          │    └─> Start service │
 └──────────────────────┘          └──────────────────────┘
         ↓                                       ↓
         └───────────────────┬───────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 7. Регистрация узлов (controller)                            │
-│    └─> linstor node create для каждого satellite            │
+│ 7. Node registration (controller)                            │
+│    └─> linstor node create for each satellite               │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 8. Создание Storage Pools (linstor_storage_pool)           │
+│ 8. Storage pool creation (linstor_storage_pool)             │
 │    └─> linstor storage-pool create lvmthin                 │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 9. Установка GUI (admin)                                    │
-│    └─> Установка пакета или Docker контейнера               │
+│ 9. GUI installation (admin)                                 │
+│    └─> Package or Docker container                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Время выполнения
+## Runtime
 
-Примерное время выполнения для кластера из 3 узлов:
+Approximate runtime for a 3-node cluster:
 
-- Подготовка окружения: ~5 секунд
-- Проверка системы: ~10 секунд
-- Инициализация дисков: ~30 секунд (зависит от размера дисков)
-- Установка пакетов: ~2-5 минут (зависит от скорости интернета)
-- Настройка Controller/Satellite: ~30 секунд
-- Регистрация узлов: ~1 минута
-- Создание storage pools: ~10 секунд
-- Установка GUI: ~30 секунд
+- Environment preparation: ~5 s
+- System check: ~10 s
+- Disk initialization: ~30 s (depends on disk size)
+- Package installation: ~2–5 min (depends on network)
+- Controller/Satellite setup: ~30 s
+- Node registration: ~1 min
+- Storage pool creation: ~10 s
+- GUI installation: ~30 s
 
-**Общее время:** ~5-10 минут для типичного кластера.
+**Total:** ~5–10 minutes for a typical cluster.
 
-## Проверка после установки
+## Post-install checks
 
-После завершения установки проверьте:
+After installation:
 
 ```bash
-# На любом контроллере
+# On any controller
 linstor node list
 linstor storage-pool list
 linstor resource list
 
-# Проверка сервисов
+# Service status
 systemctl status linstor-controller
 systemctl status linstor-satellite
 
-# Проверка GUI
+# GUI check
 curl -I http://<controller-ip>:3370/ui/
 ```
 
-## Откат изменений
+## Rollback
 
-Playbook является идемпотентным - его можно запускать многократно без побочных эффектов. Однако для полного отката:
+The playbook is idempotent and can be run multiple times. For a full rollback:
 
-1. Остановите сервисы:
+1. Stop services:
    ```bash
    systemctl stop linstor-controller linstor-satellite
    ```
 
-2. Удалите узлы из кластера (на контроллере):
+2. Remove nodes from cluster (on controller):
    ```bash
    linstor node delete <node-name>
    ```
 
-3. Удалите storage pools (на контроллере):
+3. Delete storage pools (on controller):
    ```bash
    linstor storage-pool delete <node-name> <pool-name>
    ```
 
-4. Удалите LVM структуры (на каждом узле):
+4. Remove LVM structures (on each node):
    ```bash
    lvremove drbdpool/thinpool
    vgremove drbdpool
    pvremove /dev/sdb /dev/sdc
    ```
 
-5. Удалите пакеты:
+5. Remove packages:
    ```bash
    apt remove linstor-* drbd-* lvm2
    ```

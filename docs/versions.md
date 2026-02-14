@@ -1,22 +1,16 @@
-# Места определения версий в проекте
+# Version definitions in the project
 
-Этот документ содержит полный список всех мест, где определяются версии пакетов, ОС и зависимостей.
+This document lists where package, OS, and dependency versions are defined.
 
-## 1. Версии операционных систем
+## 1. Operating system versions
 
-### readme.md
-**Файл:** `readme.md`  
-**Строка:** 22  
-**Текущее значение:**
-```markdown
-Target systems are RHEL 7/8/9 or Ubuntu 22.04, 24.04, 25.04+ (or compatible variants).
-```
-**Статус:** ✅ Обновлено
+### README.md
+**File:** `README.md`  
+**Content:** Target systems are RHEL 7/8/9 or Ubuntu 22.04, 24.04, 25.04+ (or compatible variants).
 
-### Проверка версии ОС
-**Файл:** `roles/commons/os-checker/tasks/main.yaml`  
-**Строки:** 4-8  
-**Описание:** Определяет версию ОС из `/etc/os-release`, но не использует её для ограничений - только для определения семейства ОС (RedHat/Debian)
+### OS version check
+**File:** `roles/commons/os-checker/tasks/main.yaml`  
+**Description:** Reads OS version from `/etc/os-release`; used for OS family (RedHat/Debian), not for hard version limits.
 
 ```yaml
 - name: get os_version from /etc/os-release
@@ -26,146 +20,54 @@ Target systems are RHEL 7/8/9 or Ubuntu 22.04, 24.04, 25.04+ (or compatible vari
   changed_when: False
 ```
 
-## 2. Версия Ansible
+## 2. Ansible version
 
-### readme.md
-**Файл:** `readme.md`  
-**Строка:** 19  
-**Текущее значение:**
-```markdown
-Deployment environment must have Ansible `2.9.0+` and `python-netaddr`.
-```
-**Статус:** ✅ Обновлено (было 2.7.0+)
+**File:** `README.md`  
+**Content:** Deployment environment must have Ansible `2.9.0+` and `python-netaddr`.
 
-## 3. Версии пакетов LINSTOR
+## 3. LINSTOR package versions
 
-### ⚠️ ВАЖНО: Версии пакетов НЕ зафиксированы явно
+### Important: package versions are not pinned
 
-Пакеты устанавливаются **без указания версий**, что означает установку последних доступных версий из репозиториев LINBIT.
+Packages are installed **without version pins**, i.e. latest available from LINBIT repositories.
 
-### Определение списка пакетов для RHEL/CentOS
+### Package list for RHEL/CentOS
 
-**Файл:** `roles/linstor/controller/meta/main.yaml`  
-**Строки:** 4-6  
-**Пакеты:**
-```yaml
-lb_rpm_pkgs: ["kmod-drbd", "drbd", "linstor-controller", "linstor-satellite", "linstor-client", "python-linstor"]
-```
+**File:** `roles/linstor/controller/meta/main.yaml`, `roles/linstor/satellite/meta/main.yaml`  
+**Packages:** `lb_rpm_pkgs`: kmod-drbd, drbd, linstor-controller, linstor-satellite, linstor-client, python-linstor
 
-**Файл:** `roles/linstor/satellite/meta/main.yaml`  
-**Строки:** 4-6  
-**Пакеты:**
-```yaml
-lb_rpm_pkgs: ["kmod-drbd", "drbd", "linstor-controller", "linstor-client", "linstor-satellite", "python-linstor"]
-```
+### Package list for Ubuntu/Debian
 
-### Определение списка пакетов для Ubuntu/Debian
+**File:** `roles/linstor/controller/meta/main.yaml`, `roles/linstor/satellite/meta/main.yaml`  
+**Packages:** `lb_deb_pkgs`: drbd-dkms, drbd-utils, linstor-controller, linstor-satellite, linstor-client, python-linstor
 
-**Файл:** `roles/linstor/controller/meta/main.yaml`  
-**Строки:** 4-6  
-**Пакеты:**
-```yaml
-lb_deb_pkgs: ["drbd-dkms", "drbd-utils", "linstor-controller", "linstor-satellite", "linstor-client", "python-linstor"]
-```
+### Installation
 
-**Файл:** `roles/linstor/satellite/meta/main.yaml`  
-**Строки:** 4-6  
-**Пакеты:**
-```yaml
-lb_deb_pkgs: ["drbd-dkms", "drbd-utils", "linstor-controller", "linstor-client", "linstor-satellite", "python-linstor"]
-```
+**File:** `roles/commons/pre-install/tasks/pkg.yaml`  
+`yum` / `apt` are used without version; they install the latest from the repository.
 
-### Установка пакетов
+## 4. linbit-manage-node.py version
 
-**Файл:** `roles/commons/pre-install/tasks/pkg.yaml`  
-**Строки:** 12-24  
+**File:** `roles/commons/pre-install/tasks/pkg.yaml`  
+Script is fetched with `force: yes`, so the latest version is downloaded on every run.
 
-**Для RHEL:**
-```yaml
-- name: install LINBIT packages (RHEL)
-  when: ansible_os_family == "RedHat"
-  yum:
-    name: "{{ item }}"
-    update_cache: yes
-  with_items: "{{ lb_rpm_pkgs }}"
-```
+## 5. Pinning package versions
 
-**Для Ubuntu:**
-```yaml
-- name: install LINBIT packages (Ubuntu)
-  when: ansible_os_family == "Debian"
-  apt:
-    name: "{{ item }}"
-    update_cache: yes
-  with_items: "{{ lb_deb_pkgs }}"
-```
+To pin versions, change `roles/commons/pre-install/tasks/pkg.yaml` and define versioned lists in `group_vars/all.yaml` or role meta (e.g. `lb_rpm_pkgs_with_versions`, `lb_deb_pkgs_with_versions`).
 
-**Примечание:** Модули `yum` и `apt` без указания версии устанавливают последнюю доступную версию из репозитория.
+## 6. Summary table
 
-## 4. Версия linbit-manage-node.py
+| Component        | File        | Current value              | Status   |
+|-----------------|-------------|----------------------------|----------|
+| Ubuntu versions | README.md   | 22.04, 24.04, 25.04+       | Updated  |
+| RHEL versions   | README.md   | 7/8/9                      | Current  |
+| Ansible version | README.md   | 2.9.0+                     | Updated  |
+| LINSTOR packages| meta/main.yaml | No version (latest)     | Verify   |
+| linbit-manage-node.py | pkg.yaml | Always latest        | Current  |
 
-**Файл:** `roles/commons/pre-install/tasks/pkg.yaml`  
-**Строки:** 2-7  
+## 7. Recommendations
 
-```yaml
-- name: fetch the latest linbit-manage-node.py
-  get_url:
-    url: "https://my.linbit.com/linbit-manage-node.py"
-    dest: "/root/linbit-manage-node.py"
-    mode: "0640"
-    force: "yes"
-```
-
-**Примечание:** Скрипт всегда загружается с `force: yes`, что означает загрузку последней версии при каждом запуске.
-
-## 5. Как добавить явное указание версий пакетов
-
-Если необходимо зафиксировать конкретные версии пакетов, нужно изменить файл `roles/commons/pre-install/tasks/pkg.yaml`:
-
-### Для RHEL (yum):
-```yaml
-- name: install LINBIT packages (RHEL)
-  when: ansible_os_family == "RedHat"
-  yum:
-    name: "{{ item.name }}"
-    version: "{{ item.version }}"
-    update_cache: yes
-  with_items: "{{ lb_rpm_pkgs_with_versions }}"
-```
-
-И определить переменную в `group_vars/all.yaml` или в meta роли:
-```yaml
-lb_rpm_pkgs_with_versions:
-  - { name: "kmod-drbd", version: "9.2.0" }
-  - { name: "drbd", version: "9.2.0" }
-  - { name: "linstor-controller", version: "1.25.0" }
-  # и т.д.
-```
-
-### Для Ubuntu (apt):
-```yaml
-- name: install LINBIT packages (Ubuntu)
-  when: ansible_os_family == "Debian"
-  apt:
-    name: "{{ item.name }}={{ item.version }}"
-    update_cache: yes
-  with_items: "{{ lb_deb_pkgs_with_versions }}"
-```
-
-## 6. Сводная таблица
-
-| Компонент | Файл | Строка | Текущее значение | Статус |
-|-----------|------|--------|------------------|--------|
-| Ubuntu версии | readme.md | 22 | Ubuntu 22.04, 24.04, 25.04+ | ✅ Обновлено |
-| RHEL версии | readme.md | 22 | RHEL 7/8/9 | ✅ Актуально |
-| Ansible версия | readme.md | 19 | Ansible 2.9.0+ | ✅ Обновлено |
-| Пакеты LINSTOR | meta/main.yaml | 4-6 | Без версий (последние) | ⚠️ Требует проверки |
-| linbit-manage-node.py | pkg.yaml | 2-7 | Всегда последняя | ✅ Актуально |
-
-## 7. Рекомендации
-
-1. **Для production:** Рассмотреть возможность фиксации версий пакетов LINSTOR для обеспечения стабильности
-2. **Для development:** Оставить установку последних версий для получения новых функций и исправлений
-3. **Мониторинг:** Регулярно проверять доступность пакетов для новых версий Ubuntu в репозиториях LINBIT
-4. **Тестирование:** Перед обновлением версий ОС тестировать playbook на тестовом окружении
-
+1. **Production:** Consider pinning LINSTOR package versions for stability.
+2. **Development:** Keep using latest versions for new features and fixes.
+3. **Monitoring:** Periodically check LINBIT repos for new Ubuntu releases.
+4. **Testing:** Test the playbook in a lab before upgrading OS versions.

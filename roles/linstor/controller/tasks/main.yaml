@@ -24,7 +24,7 @@
     msg: "linstor-controller service not found. Please ensure linstor-controller package is installed. The pre-install role should install it automatically."
   when: service_check.rc != 0
 
-# Readiness via SSH: только проверка сервиса внутри машины, без портов.
+# Readiness via SSH: only in-machine service check, no port wait.
 - name: wait for controller service to be active
   command: systemctl is-active linstor-controller
   register: controller_active

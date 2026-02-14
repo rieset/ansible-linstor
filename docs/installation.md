@@ -1,25 +1,25 @@
-# Инструкция по запуску установки LINSTOR
+# LINSTOR installation guide
 
-## Предварительные требования
+## Prerequisites
 
-1. **Ansible** версии 2.9.0 или выше (рекомендуется последняя версия)
+1. **Ansible** 2.9.0 or newer (latest recommended)
    ```bash
    ansible --version
    ```
-   **Примечание:** Минимальная версия - 2.9.0+, но рекомендуется использовать последнюю стабильную версию (например, 2.20.2+). Ваша версия 2.20.2 полностью совместима! ✅
+   Minimum version is 2.9.0+; latest stable (e.g. 2.20.2+) is recommended.
 
-2. **Python библиотека netaddr**
+2. **Python netaddr library**
    ```bash
    pip install netaddr
    ```
 
-3. **SSH доступ** ко всем целевым хостам без пароля (по ключу)
+3. **SSH access** to all target hosts without password (key-based)
 
-4. **Учетная запись LINBIT Portal** на https://my.linbit.com
+4. **LINBIT Portal account** at https://my.linbit.com
 
-## Шаг 1: Настройка инвентаря
+## Step 1: Inventory setup
 
-Используйте файл из `clusters/` (например, `clusters/linstor.ini`) или создайте свой. Укажите IP-адреса или hostname ваших серверов:
+Use a file from `clusters/` (e.g. `clusters/linstor.ini`) or create your own. Set your servers’ IP addresses or hostnames:
 
 ```ini
 [controller]
@@ -49,15 +49,15 @@ sdb
 sdc
 ```
 
-**Примечания:**
-- Узел может быть одновременно в группах `controller` и `satellite` — это создаст Combined узел
-- Узлы в группе `linstor_storage_pool` будут предоставлять блочное хранилище (LVM thin pool)
-- Группа `[admin]` — узел, на котором устанавливается LINSTOR GUI (если используется роль gui)
-- Секция `[drbd]` — список дисков для storage pool (sdb, sdc и т.д.)
+**Notes:**
+- A host can be in both `controller` and `satellite` — that creates a Combined node
+- Hosts in `linstor_storage_pool` provide block storage (LVM thin pool)
+- `[admin]` — host where LINSTOR GUI is installed (when using the gui role)
+- `[drbd]` — list of disks for storage pool (sdb, sdc, etc.)
 
-## Шаг 2: Настройка переменных
+## Step 2: Variable configuration
 
-Отредактируйте файл `group_vars/all.yaml`:
+Edit `group_vars/all.yaml`:
 
 ```yaml
 ---
@@ -77,152 +77,152 @@ lb_con_id: ""
 lb_clu_id: ""
 ```
 
-### Параметры:
+### Parameters
 
-- **ansible_user** — пользователь для SSH подключения
-- **ansible_ssh_private_key_file** — путь к приватному SSH ключу
-- **ansible_become** — повышение привилегий (в playbook используется `become: true`)
-- **drbd_backing_disk** — неиспользуемый блочный диск для LVM (например, `/dev/sdb`)
-  - Если диска нет, не добавляйте узел в `linstor_storage_pool` — будет создан только file-thin pool
-- **drbd_replication_network** - сеть для репликации DRBD в формате CIDR (рекомендуется отдельная сеть)
-- **lb_user, lb_pass** - учетные данные для LINBIT Portal
-- **lb_con_id** - ID контракта в LINBIT Portal
-- **lb_clu_id** - ID кластера в LINBIT Portal
+- **ansible_user** — SSH user
+- **ansible_ssh_private_key_file** — path to SSH private key
+- **ansible_become** — privilege escalation (playbook uses `become: true`)
+- **drbd_backing_disk** — unused block device for LVM (e.g. `/dev/sdb`)
+  - If no such disk, do not add the host to `linstor_storage_pool` — only file-thin pool will be used
+- **drbd_replication_network** — DRBD replication network in CIDR (separate network recommended)
+- **lb_user, lb_pass** — LINBIT Portal credentials
+- **lb_con_id** — Contract ID in LINBIT Portal
+- **lb_clu_id** — Cluster ID in LINBIT Portal
 
-## Шаг 3: Проверка подключения
+## Step 3: Connection check
 
-Проверьте, что Ansible может подключиться ко всем хостам:
+Ensure Ansible can reach all hosts:
 
 ```bash
 ansible all -i clusters/linstor.ini -m ping
 ```
 
-Должны увидеть `SUCCESS` для всех хостов. Замените `linstor.ini` на ваш файл инвентаря при необходимости.
+You should see `SUCCESS` for all hosts. Replace `linstor.ini` with your inventory file if needed.
 
-## Шаг 4: Запуск установки
+## Step 4: Run installation
 
-### Базовый запуск (использует переменные из group_vars/all.yaml):
+### Basic run (uses variables from group_vars/all.yaml)
 
 ```bash
 ansible-playbook ubuntu.yaml
 ```
 
-### Запуск с указанием инвентаря:
+### With explicit inventory
 
 ```bash
 ansible-playbook -i clusters/linstor.ini ubuntu.yaml
 ```
 
-### Запуск с передачей учетных данных LINBIT через командную строку:
+### Passing LINBIT credentials on the command line
 
-Если не хотите хранить пароли в файле:
+If you prefer not to store passwords in a file:
 
 ```bash
 ansible-playbook ubuntu.yaml \
-  -e lb_user="ваш_логин" \
-  -e lb_pass="ваш_пароль" \
+  -e lb_user="your_login" \
+  -e lb_pass="your_password" \
   -e lb_con_id="1234" \
   -e lb_clu_id="4321"
 ```
 
-### Запуск с ограничением на определенные хосты:
+### Limiting to specific hosts
 
 ```bash
-# Только controller
+# Controller only
 ansible-playbook ubuntu.yaml --limit controller
 
-# Только satellite
+# Satellite only
 ansible-playbook ubuntu.yaml --limit satellite
 
-# Конкретный хост
+# Single host
 ansible-playbook ubuntu.yaml --limit 192.168.1.11
 ```
 
-### Запуск с тегами (выполнение отдельных ролей):
+### Running by tags (specific roles)
 
 ```bash
-# Только установка controller
+# Controller only
 ansible-playbook ubuntu.yaml --tags controller
 
-# Только установка satellite
+# Satellite only
 ansible-playbook ubuntu.yaml --tags satellite
 
-# Только создание storage pool
+# Storage pool only
 ansible-playbook ubuntu.yaml --tags storage-pool
 ```
 
-### Проверка без выполнения (dry-run):
+### Dry run
 
 ```bash
 ansible-playbook ubuntu.yaml --check
 ```
 
-### Подробный вывод (verbose):
+### Verbose output
 
 ```bash
-ansible-playbook ubuntu.yaml -v    # -v, -vv, -vvv для большей детализации
+ansible-playbook ubuntu.yaml -v    # -v, -vv, -vvv for more detail
 ```
 
-## Шаг 5: Проверка установки
+## Step 5: Verify installation
 
-После успешного выполнения playbook, подключитесь к controller узлу и проверьте:
+After a successful run, connect to a controller and run:
 
 ```bash
-# Проверка узлов
+# List nodes
 linstor node list
 
-# Проверка storage pools
+# List storage pools
 linstor storage-pool list
 
-# Проверка ресурсов
+# List resources
 linstor resource list
 ```
 
-## Создание тестового ресурса
+## Create a test resource
 
 ```bash
-# Создание resource definition
+# Create resource definition
 linstor resource-definition create test-res-0
 
-# Создание volume definition
+# Create volume definition
 linstor volume-definition create test-res-0 100MiB
 
-# Создание ресурса на узле
+# Create resource on a node
 linstor resource create \
   $(linstor sp list | head -n4 | tail -n1 | cut -d"|" -f3 | sed 's/ //g') \
   test-res-0 --storage-pool lvm-thin
 
-# Проверка
+# Verify
 linstor resource list
 ```
 
-## Устранение проблем
+## Troubleshooting
 
-### Ошибка подключения SSH
+### SSH connection errors
 
 ```bash
-# Проверьте SSH ключ
+# Check SSH key
 ssh -i ~/.ssh/ansible_key ansible@192.168.1.11
 
-# Проверьте, что ключ добавлен в ssh-agent
+# Ensure key is in ssh-agent
 ssh-add ~/.ssh/ansible_key
 ```
 
-### Ошибка регистрации в LINBIT Portal
+### LINBIT Portal registration errors
 
-- Проверьте правильность учетных данных
-- Убедитесь, что у вас есть активный контракт
-- Проверьте доступность https://my.linbit.com
+- Check credentials
+- Ensure you have an active contract
+- Check https://my.linbit.com is reachable
 
-### Ошибка установки пакетов
+### Package installation errors
 
-- Убедитесь, что узлы имеют доступ к интернету
-- Проверьте, что репозитории LINBIT настроены корректно после регистрации
-- Проверьте версию ОС (должна быть поддерживаемая)
+- Ensure nodes have internet access
+- Check LINBIT repos are configured correctly after registration
+- Check OS version is supported
 
-### Проблемы с firewall
+### Firewall issues
 
-Playbook автоматически настраивает firewall, но если есть проблемы:
+The playbook configures the firewall automatically; if you have issues:
 
 ```bash
 # RHEL/CentOS
@@ -232,51 +232,49 @@ firewall-cmd --list-ports
 ufw status
 ```
 
-## Полезные команды
+## Useful commands
 
-### Проверка конфигурации Ansible:
+### Ansible configuration
 
 ```bash
 ansible-config dump
 ```
 
-### Проверка синтаксиса playbook:
+### Playbook syntax check
 
 ```bash
 ansible-playbook ubuntu.yaml --syntax-check
 ```
 
-### Просмотр фактов о хостах:
+### Host facts
 
 ```bash
-ansible all -i hosts.ini -m setup
+ansible all -i clusters/linstor.ini -m setup
 ```
 
-### Выполнение команды на всех хостах:
+### Run command on all hosts
 
 ```bash
-ansible all -i hosts.ini -a "systemctl status linstor-controller"
+ansible all -i clusters/linstor.ini -a "systemctl status linstor-controller"
 ```
 
-## Примеры использования
+## Usage examples
 
-### Установка только на новых узлах:
+### Install only on new nodes
 
 ```bash
-# Добавьте новые узлы в hosts.ini
-# Затем запустите с ограничением
+# Add new nodes to inventory, then:
 ansible-playbook ubuntu.yaml --limit new_nodes
 ```
 
-### Обновление только controller:
+### Update controller only
 
 ```bash
 ansible-playbook ubuntu.yaml --tags controller --limit controller
 ```
 
-### Пересоздание storage pool:
+### Recreate storage pool
 
 ```bash
 ansible-playbook ubuntu.yaml --tags storage-pool
 ```
-

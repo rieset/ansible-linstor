@@ -1,46 +1,46 @@
-# Анализ хоста без диска для storage pool (пример)
+# Host without disk for storage pool (example)
 
-Пример разбора ситуации, когда один из satellite-узлов не имеет отдельного диска для `drbd_backing_disk`.
+Example of handling a satellite node that has no dedicated disk for `drbd_backing_disk`.
 
-## Результаты проверки
+## Check results
 
-### ✅ Хост доступен
-- SSH подключение работает
-- Пользователь: `<ansible_user>`
-- Может выполнять команды с sudo
+### Host is reachable
+- SSH works
+- User: `<ansible_user>`
+- Can run commands with sudo
 
-### ❌ Проблема: отсутствует диск для drbd_backing_disk
+### Problem: no disk for drbd_backing_disk
 
-**Текущая ситуация:**
-- На хосте есть только **один диск**: `/dev/sda` (33.5G)
-- Диск `/dev/sda` полностью используется для системы:
-  - `sda1` (32.5G) - корневая файловая система `/`
-  - `sda14` (4M) - раздел
-  - `sda15` (106M) - `/boot/efi`
-  - `sda16` (913M) - `/boot`
-- **НЕТ диска `/dev/sdb`**, который указан в `group_vars/all.yaml`
-- LVM не используется (нет volume groups)
+**Situation:**
+- Host has only **one disk**: `/dev/sda` (33.5G)
+- `/dev/sda` is fully used by the system:
+  - `sda1` (32.5G) — root `/`
+  - `sda14` (4M) — partition
+  - `sda15` (106M) — `/boot/efi`
+  - `sda16` (913M) — `/boot`
+- **No `/dev/sdb`** as set in `group_vars/all.yaml`
+- No LVM volume groups
 
-**Пример конфигурации в inventory:**
+**Example inventory:**
 ```ini
 [satellite]
-192.168.1.25  # ✅ Есть
+192.168.1.25  # present
 
 [linstor_storage_pool]
-192.168.1.25  # ⚠️ ПРОБЛЕМА: требует диск /dev/sdb, которого нет
+192.168.1.25  # problem: expects /dev/sdb which is missing
 ```
 
-## Последствия
+## Effect
 
-Если запустить playbook с такой конфигурацией:
-- ✅ Роль `linstor/satellite` выполнится успешно (создаст file-thin pool)
-- ❌ Роль `linstor/storage-pool` **упадет с ошибкой**, так как диск `/dev/sdb` не существует
+With this configuration:
+- Role `linstor/satellite` will succeed (creates file-thin pool)
+- Role `linstor/storage-pool` will **fail** because `/dev/sdb` does not exist
 
-## Решения
+## Options
 
-### Решение 1: Убрать хост из linstor_storage_pool (РЕКОМЕНДУЕТСЯ)
+### Option 1: Remove host from linstor_storage_pool (recommended)
 
-**Если нет возможности добавить диск**, уберите хост из группы `linstor_storage_pool`:
+**If you cannot add a disk**, remove the host from `linstor_storage_pool`:
 
 ```ini
 [satellite]
@@ -49,76 +49,76 @@
 192.168.1.27
 
 [linstor_storage_pool]
-192.168.1.26  # убрать 192.168.1.25
+192.168.1.26  # omit 192.168.1.25
 192.168.1.27
 ```
 
-**Результат:**
-- ✅ Хост будет работать как satellite
-- ✅ Создастся file-thin storage pool (не требует диска)
-- ⚠️ Меньшая производительность по сравнению с lvm-thin pool
+**Result:**
+- Host works as satellite
+- File-thin storage pool is created (no disk required)
+- Lower performance than lvm-thin pool
 
-### Решение 2: Добавить новый диск к серверу
+### Option 2: Add a disk to the server
 
-Если возможно добавить диск к серверу:
+If you can add a disk:
 
-1. **Добавьте физический диск** к виртуальной машине/серверу
-2. **Проверьте, что диск появился:**
+1. Attach a disk to the VM/server
+2. Check that the disk appears:
    ```bash
    ssh <user>@<host> "sudo lsblk"
    ```
-3. **Если диск появился (например `/dev/sdb`):**
-   - Оставьте текущую конфигурацию
-   - Playbook автоматически создаст LVM thin pool на этом диске
+3. If the disk appears (e.g. `/dev/sdb`):
+   - Keep the current config
+   - The playbook will create the LVM thin pool on it
 
-### Решение 3: Использовать другой существующий диск (НЕ РЕКОМЕНДУЕТСЯ)
+### Option 3: Use another existing disk (not recommended)
 
-**ВНИМАНИЕ:** На данном хосте нет других свободных дисков. Это решение не применимо.
+**Warning:** This host has no other free disks; this option does not apply here.
 
-Если бы был другой свободный диск (например `/dev/sdc`), можно было бы:
-1. Изменить `group_vars/all.yaml`:
+If there were another free disk (e.g. `/dev/sdc`), you could:
+1. Change `group_vars/all.yaml`:
    ```yaml
    drbd_backing_disk: /dev/sdc
    ```
-2. Или использовать переменные на уровне хоста
+2. Or use host-level variables
 
-## Рекомендация
+## Recommendation
 
-**Для хоста без диска рекомендую Решение 1:**
+**For a host without a disk, use Option 1:**
 
-1. Убрать хост из `[linstor_storage_pool]`
-2. Оставить только в `[satellite]`
-3. Хост будет работать с file-thin pool (достаточно для большинства задач)
+1. Remove the host from `[linstor_storage_pool]`
+2. Keep it only in `[satellite]`
+3. The host will use file-thin pool (enough for many workloads)
 
-**Или**, если нужна высокая производительность:
-- Добавить новый диск к серверу
-- Оставить хост в `[linstor_storage_pool]`
+**Or**, for higher performance:
+- Add a disk to the server
+- Keep the host in `[linstor_storage_pool]`
 
-## Пример конфигурации кластера
+## Example cluster layout
 
-После применения Решения 1:
+After applying Option 1:
 
 ```
-Controllers: 3 узла (192.168.1.11–13)
-Satellites: 3 узла (192.168.1.25–27)
+Controllers: 3 nodes (192.168.1.11–13)
+Satellites: 3 nodes (192.168.1.25–27)
 Storage Pools:
-  - lvm-thin: 2 узла (192.168.1.26–27) - высокопроизводительные
-  - file-thin: 1 узел (192.168.1.25) - стандартные
+  - lvm-thin: 2 nodes (192.168.1.26–27) — higher performance
+  - file-thin: 1 node (192.168.1.25) — standard
 ```
 
-Это нормальная конфигурация для смешанного использования.
+This is a valid mixed setup.
 
-## Команды для проверки после изменений
+## Verification commands
 
-После изменения конфигурации проверьте:
+After changing the config:
 
 ```bash
-# Проверка подключения
+# Connectivity
 ansible 192.168.1.25 -i clusters/<your-cluster>.ini -m ping
 
-# Проверка синтаксиса
+# Syntax check
 ansible-playbook ubuntu.yaml --syntax-check
 
-# Тестовый запуск только для этого хоста
+# Dry run for this host only
 ansible-playbook ubuntu.yaml -i clusters/<your-cluster>.ini --limit 192.168.1.25 --check
 ```

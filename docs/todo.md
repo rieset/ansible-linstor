@@ -1,77 +1,48 @@
-# TODO и Цели проекта
+# TODO and project goals
 
-## Основные цели
+## Goals
 
-### 1. Поддержка новых версий Ubuntu
-- [ ] Добавить поддержку Ubuntu 24.04 (Noble Numbat)
-- [ ] Добавить поддержку Ubuntu 25.04 (Plucky Pangolin)
-- [ ] Обновить документацию с указанием поддерживаемых версий
-- [ ] Протестировать установку на Ubuntu 24.04
-- [ ] Протестировать установку на Ubuntu 25.04
+### 1. Support new Ubuntu versions
+- [ ] Add support for Ubuntu 24.04 (Noble Numbat)
+- [ ] Add support for Ubuntu 25.04 (Plucky Pangolin)
+- [ ] Update docs with supported versions
+- [ ] Test installation on Ubuntu 24.04
+- [ ] Test installation on Ubuntu 25.04
 
-### 2. Обновление версий пакетов LINSTOR
-- [ ] Проверить текущие версии пакетов LINSTOR в репозиториях LINBIT
-- [ ] Убедиться, что устанавливаются последние версии пакетов
-- [ ] При необходимости добавить явное указание версий (если требуется)
-- [ ] Протестировать установку последних версий
+### 2. LINSTOR package versions
+- [ ] Check current LINSTOR package versions in LINBIT repos
+- [ ] Ensure latest packages are installed
+- [ ] Add explicit version pinning if required
+- [ ] Test with latest versions
 
-### 3. Обновление документации
-- [ ] Обновить readme.md с актуальной информацией о поддерживаемых ОС
-- [ ] Обновить требования к Ansible (проверить минимальную версию)
-- [ ] Добавить информацию о тестировании на новых версиях Ubuntu
+### 3. Documentation
+- [ ] Update README with current supported OS
+- [ ] Update Ansible requirements (verify minimum version)
+- [ ] Add testing notes for new Ubuntu versions
 
-### 4. Тестирование и валидация
-- [ ] Протестировать playbook на Ubuntu 24.04
-- [ ] Протестировать playbook на Ubuntu 25.04
-- [ ] Проверить работу всех ролей (controller, satellite, storage-pool)
-- [ ] Проверить создание storage pools
-- [ ] Проверить работу firewall правил
+### 4. Testing and validation
+- [ ] Test playbook on Ubuntu 24.04
+- [ ] Test playbook on Ubuntu 25.04
+- [ ] Verify all roles (controller, satellite, storage-pool)
+- [ ] Verify storage pool creation
+- [ ] Verify firewall rules
 
-## Технические детали
+## Version and OS locations
 
-### Места, где указываются версии/ОС:
+1. **README.md** — Supported OS: Ubuntu 22.04, 24.04, 25.04+
+2. **README.md** — Ansible: verify minimum version
+3. **LINSTOR packages** (no version pin) — `roles/linstor/controller/meta/main.yaml`, `roles/linstor/satellite/meta/main.yaml`
+4. **OS check** — `roles/commons/os-checker/tasks/main.yaml` (RedHat and Debian families)
 
-1. **readme.md** (строка 14):
-   - Текущее: `Ubuntu 22.04`
-   - Нужно: `Ubuntu 22.04, 24.04, 25.04+`
+## Action plan
 
-2. **readme.md** (строка 11):
-   - Текущее: `Ansible 2.7.0+`
-   - Нужно: Проверить актуальную минимальную версию
+1. Update README with supported Ubuntu versions and Ansible requirements.
+2. Check LINBIT package availability for Ubuntu 24.04 and 25.04; verify `linbit-manage-node.py` with new versions.
+3. Test in Ubuntu 24.04 and 25.04 environments; run playbook and validate.
+4. If issues appear: adapt roles, firewall, and service configs.
 
-3. **Пакеты LINSTOR** (устанавливаются без версий):
-   - `roles/linstor/controller/meta/main.yaml`
-   - `roles/linstor/satellite/meta/main.yaml`
-   - Пакеты: `kmod-drbd`, `drbd`, `linstor-controller`, `linstor-satellite`, `linstor-client`, `python-linstor`
-   - Для Ubuntu: `drbd-dkms`, `drbd-utils`, `linstor-controller`, `linstor-satellite`, `linstor-client`, `python-linstor`
+## Notes
 
-4. **Проверка ОС**:
-   - `roles/commons/os-checker/tasks/main.yaml` - определяет семейство ОС
-   - Поддерживает RedHat и Debian семейства
-
-### План действий
-
-1. **Обновить readme.md**:
-   - Изменить поддерживаемые версии Ubuntu на 22.04, 24.04, 25.04+
-   - Обновить требования к Ansible (если нужно)
-
-2. **Проверить совместимость**:
-   - Убедиться, что пакеты LINBIT доступны для Ubuntu 24.04 и 25.04
-   - Проверить, что `linbit-manage-node.py` работает с новыми версиями
-
-3. **Тестирование**:
-   - Создать тестовое окружение с Ubuntu 24.04
-   - Создать тестовое окружение с Ubuntu 25.04
-   - Запустить playbook и проверить результат
-
-4. **Исправление проблем** (если возникнут):
-   - Адаптировать роли под новые версии ОС
-   - Обновить настройки firewall
-   - Обновить конфигурации сервисов
-
-## Примечания
-
-- Пакеты LINSTOR устанавливаются через репозиторий LINBIT после регистрации через `linbit-manage-node.py`
-- Версии пакетов не зафиксированы явно - используются последние доступные в репозитории
-- Для явного указания версий потребуется изменить `roles/commons/pre-install/tasks/pkg.yaml`
-
+- LINSTOR packages are installed from LINBIT repo after registration via `linbit-manage-node.py`.
+- Versions are not pinned; latest from repo are used.
+- To pin versions, change `roles/commons/pre-install/tasks/pkg.yaml`.

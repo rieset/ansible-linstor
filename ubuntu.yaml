@@ -1,6 +1,6 @@
 ---
-# Readiness: 1) Firewall 2) Controller/Satellite: start, затем по SSH проверка systemctl is-active (без портов)
-# 3) Register-satellites после готовности сервисов; затем storage pool.
+# Readiness: 1) Firewall 2) Controller/Satellite: start, then SSH check systemctl is-active (no port wait)
+# 3) Register-satellites after services are ready; then storage pool.
 
 - hosts: linstor_cluster
   gather_facts: false

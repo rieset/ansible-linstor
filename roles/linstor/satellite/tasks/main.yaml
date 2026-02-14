@@ -48,7 +48,7 @@
     - groups['controller'] is defined
     - groups['controller'] | length > 0
 
-# Readiness via SSH: только проверка сервиса внутри машины, без портов.
+# Readiness via SSH: only in-machine service check, no port wait.
 - name: wait for satellite service to be active
   command: systemctl is-active linstor-satellite
   register: satellite_active

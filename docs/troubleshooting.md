@@ -1,106 +1,105 @@
-# Устранение проблем при установке
+# Installation troubleshooting
 
-## Проблема: Timeout при создании временного файла
+## Timeout when creating temporary file
 
-### Ошибка:
+### Error
 ```
 [ERROR]: Task failed: Module failed: failed to create temporary content file: The read operation timed out
 ```
 
-### Причины:
-1. **Проблема с remote_tmp директорией** - неправильные права или путь
-2. **Проблема с pipelining** - конфликт при использовании become
-3. **Медленное соединение** - timeout при загрузке файлов
+### Causes
+1. **remote_tmp** — wrong path or permissions
+2. **pipelining** — conflict with become
+3. **Slow connection** — timeout when transferring files
 
-### Решения:
+### Fixes
 
-#### Решение 1: Исправить remote_tmp в ansible.cfg
+#### Fix 1: Set remote_tmp in ansible.cfg
 
-Измените `ansible.cfg`:
+In `ansible.cfg`:
 ```ini
 remote_tmp = /tmp/.ansible-${USER}/tmp
 ```
 
-Или используйте абсолютный путь:
+Or use an absolute path:
 ```ini
 remote_tmp = /tmp/ansible-tmp
 ```
 
-#### Решение 2: Отключить pipelining (временно)
+#### Fix 2: Disable pipelining (temporary)
 
-Если проблема сохраняется, временно отключите pipelining:
+If the issue persists:
 ```ini
 pipelining = False
 ```
 
-#### Решение 3: Увеличить timeout
+#### Fix 3: Increase timeout
 
-Добавьте в `ansible.cfg`:
+In `ansible.cfg`:
 ```ini
 timeout = 60
 ```
 
-И в задачу `get_url` добавьте:
+In the `get_url` task add:
 ```yaml
 timeout: 60
 ```
 
-#### Решение 4: Создать remote_tmp вручную на хостах
+#### Fix 4: Create remote_tmp on hosts manually
 
-Выполните на каждом хосте:
+On each host:
 ```bash
 sudo mkdir -p /tmp/.ansible-tmp
 sudo chmod 1777 /tmp/.ansible-tmp
 ```
 
-Или через Ansible:
+Or via Ansible:
 ```bash
-ansible all -i clusters/linstor-52.ini -m file -a "path=/tmp/.ansible-tmp state=directory mode=1777" --become
+ansible all -i clusters/linstor.ini -m file -a "path=/tmp/.ansible-tmp state=directory mode=1777" --become
 ```
 
-## Проблема: Предупреждение о remote_tmp
+## remote_tmp warning
 
-### Ошибка:
+### Error
 ```
 [WARNING]: Module remote_tmp /root/.ansible/tmp did not exist and was created with a mode of 0700, this may cause issues when running as another user.
 ```
 
-### Решение:
+### Fix
 
-Используйте путь, доступный для всех пользователей:
+Use a path that works for all users:
 ```ini
 remote_tmp = /tmp/.ansible-${USER}/tmp
 ```
 
-Или создайте директорию заранее с правильными правами.
+Or create the directory beforehand with suitable permissions.
 
-## Проблема: Пользователь с become
+## Non-root user with become
 
-Если вы используете не-root пользователя с `become: yes`:
+If using a non-root user with `become: yes`:
 
-1. **Убедитесь, что пользователь может использовать sudo:**
+1. **Ensure the user can use sudo:**
    ```bash
    ssh <user>@<host> "sudo -n true"
    ```
 
-2. **Проверьте, что sudo не требует пароль:**
+2. **Ensure sudo does not require a password:**
    ```bash
    ssh <user>@<host> "echo '<user> ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/<user>"
    ```
-   
-   Замените `<user>` на имя вашего пользователя и `<host>` на IP адрес хоста.
+   Replace `<user>` and `<host>` with your user and host.
 
-3. **Или используйте root напрямую:**
-   Измените в `group_vars/all.yaml`:
+3. **Or use root:**
+   In `group_vars/all.yaml`:
    ```yaml
    ansible_user: root
    ```
 
-## Проблема: Timeout при загрузке linbit-manage-node.py
+## Timeout when fetching linbit-manage-node.py
 
-### Решение:
+### Fix
 
-1. **Увеличить timeout в задаче:**
+1. **Increase timeout in the task:**
    ```yaml
    - name: fetch the latest linbit-manage-node.py
      get_url:
@@ -111,42 +110,42 @@ remote_tmp = /tmp/.ansible-${USER}/tmp
        timeout: 60
    ```
 
-2. **Проверить доступность URL:**
+2. **Check URL availability:**
    ```bash
    curl -I https://my.linbit.com/linbit-manage-node.py
    ```
 
-3. **Загрузить файл вручную и скопировать:**
+3. **Download manually and copy:**
    ```bash
-   # На локальной машине
+   # On your machine
    curl -o linbit-manage-node.py https://my.linbit.com/linbit-manage-node.py
-   
-   # Скопировать на хосты
-   ansible all -i clusters/linstor-52.ini -m copy -a "src=linbit-manage-node.py dest=/root/linbit-manage-node.py mode=0640" --become
+
+   # Copy to hosts
+   ansible all -i clusters/linstor.ini -m copy -a "src=linbit-manage-node.py dest=/root/linbit-manage-node.py mode=0640" --become
    ```
 
-## Быстрая проверка перед запуском
+## Pre-run checks
 
 ```bash
-# 1. Проверить подключение
-ansible all -i clusters/linstor-52.ini -m ping
+# 1. Connectivity
+ansible all -i clusters/linstor.ini -m ping
 
-# 2. Проверить sudo
-ansible all -i clusters/linstor-52.ini -m command -a "sudo -n true" --become
+# 2. Sudo
+ansible all -i clusters/linstor.ini -m command -a "sudo -n true" --become
 
-# 3. Проверить создание временной директории
-ansible all -i clusters/linstor-52.ini -m file -a "path=/tmp/.ansible-tmp state=directory mode=1777" --become
+# 3. Temp directory
+ansible all -i clusters/linstor.ini -m file -a "path=/tmp/.ansible-tmp state=directory mode=1777" --become
 
-# 4. Проверить доступность URL
+# 4. URL
 curl -I https://my.linbit.com/linbit-manage-node.py
 ```
 
-## Рекомендуемая конфигурация ansible.cfg
+## Suggested ansible.cfg
 
 ```ini
 [defaults]
 roles_path = ./roles
-inventory  = ./hosts.ini
+inventory  = ./clusters/linstor.ini
 remote_user = root
 remote_tmp = /tmp/.ansible-${USER}/tmp
 local_tmp  = $HOME/.ansible/tmp
@@ -158,4 +157,3 @@ interpreter_python = auto_silent
 callback_whitelist = profile_tasks
 timeout = 60
 ```
-

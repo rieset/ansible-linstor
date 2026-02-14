@@ -1,41 +1,46 @@
-# Правила для AI-ассистента в проекте LINSTOR Ansible
+# Rules for AI assistant in LINSTOR Ansible project
 
-## Проект
-Ansible playbook для автоматизации развертывания кластера LINSTOR (LINBIT).
+## Project
+Ansible playbook for automated deployment of a LINSTOR (LINBIT) cluster.
 
-## Важные правила
+## Important rules
 
-### Документация
-- **Имена .md файлов — только в нижнем регистре** (например `installation.md`, не `INSTALLATION.md`). Исключения: `README.md` и `Dockerfile` — допускаются в стандартном регистре.
-- **НЕ создавать файлы с инструкциями/документацией без явного запроса пользователя**
-- Если нужно объяснить что-то - кратко описать причину в ответе, не создавая отдельные файлы
-- Можешь предложить написать подробное описание, но не делай это автоматически
-- Не трать время на написание документов пока не попросят явно
+### Language
+- **Documentation**: write in English only.
+- **Commits**: write commit messages in English only.
+- **Comments in code**: write in English only.
 
-### Код и комментарии
-- Добавляй краткие комментарии в код для будущих AI, объясняющие неочевидные решения
-- Комментарии должны быть лаконичными и по делу
+### Documentation
+- **.md file names**: lowercase only (e.g. `installation.md`, not `INSTALLATION.md`). Exceptions: `README.md` and `Dockerfile` may use standard casing.
+- **Do NOT create** instruction/documentation files without explicit user request.
+- If something needs explaining, describe briefly in the reply; do not create separate files.
+- You may suggest writing detailed docs, but do not do it automatically.
+- Do not spend time on documentation unless explicitly asked.
 
-### Работа с ошибками
-- При ошибках сначала кратко объясни причину
-- Предложи решение, но не создавай отдельные файлы с troubleshooting без запроса
+### Code and comments
+- Add brief comments in code for future AI, explaining non-obvious decisions.
+- Comments must be concise and to the point.
+- Comments must be in English.
 
-### Версии и конфигурация
-- Пакеты LINSTOR устанавливаются без фиксации версий (последние из репозиториев LINBIT)
-- Поддерживаемые ОС: RHEL 7/8/9, Ubuntu 22.04, 24.04, 25.04+
-- Ansible: минимум 2.9.0+, рекомендуется последняя версия
+### Error handling
+- On errors, first briefly explain the cause.
+- Suggest a fix; do not create separate troubleshooting files unless requested.
 
-### Архитектура
-- Combined узлы: узел в группах `[controller]` И `[satellite]` одновременно
-- Storage pool: требует диск `drbd_backing_disk` для lvm-thin, иначе только file-thin
-- `ansible_become` (не `become`) для переменных в group_vars
+### Versions and configuration
+- LINSTOR packages are installed without version pinning (latest from LINBIT repos).
+- Supported OS: RHEL 7/8/9, Ubuntu 22.04, 24.04, 25.04+
+- Ansible: minimum 2.9.0+, latest recommended.
 
-### Коммиты
-- Не добавлять в коммиты соавторство Cursor / Cursor Agents (Co-authored-by). Автором должен оставаться только пользователь.
-- Чтобы отключить автоматическое добавление соавтора в Cursor: Settings → Cursor Settings → Agents → Attribution (выключить).
+### Architecture
+- Combined nodes: a host in both `[controller]` and `[satellite]` groups.
+- Storage pool: requires `drbd_backing_disk` for lvm-thin; otherwise file-thin only.
+- Use `ansible_become` (not `become`) for variables in group_vars.
 
-### Приоритеты
-1. Решить задачу пользователя
-2. Кратко объяснить что сделано
-3. Только при явном запросе - создать документацию
+### Commits
+- Do not add Cursor / Cursor Agents co-authorship (Co-authored-by) to commits. Author must remain the user only.
+- To disable automatic co-author in Cursor: Settings → Cursor Settings → Agents → Attribution (turn off).
 
+### Priorities
+1. Solve the user's task.
+2. Briefly explain what was done.
+3. Create documentation only when explicitly requested.

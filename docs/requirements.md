@@ -1,34 +1,31 @@
-Выполняем эти операции на каждой ноде:
+# Requirements and manual steps
 
+Operations to run on each node (or reference for automation):
 
-1) Смотрим диски
+## 1. Check disks
 
-```yaml
+```bash
 lsblk -o NAME,SIZE,MODEL,SERIAL,ROTA,TYPE
 ```
 
+Volumes sda…sdh should be visible.
 
-Тома sda…sdh должны корректно отображаться в системе.
+## 2. Create VG
 
-
-2) Создаем VG:
-
-```yaml
+```bash
 pvcreate /dev/sd{a,b,c,d,e,f,g,h}
 vgcreate drbdpool /dev/sd{a,b,c,d,e,f,g,h}
 ```
 
+## 3. Create thin pool
 
-3) Создаем thin pool:
-
-```javascript
+```bash
 lvcreate -l 95%VG -T drbdpool/thinpool
 ```
 
+## 4. I/O scheduler and queue
 
-4) Настраиваем I/O scheduler и queue:
-
-```javascript
+```bash
 for d in sda sdb sdc sdd sde sdf sdg sdh; do
   echo mq-deadline | sudo tee /sys/block/$d/queue/scheduler
   echo 0 | sudo tee /sys/block/$d/queue/add_random
@@ -36,38 +33,33 @@ for d in sda sdb sdc sdd sde sdf sdg sdh; do
 done
 ```
 
+## Official Kubernetes operator (one command)
 
-Официальный способ (одна команда):
-
-```javascript
+```bash
 kubectl apply --server-side -f \
   "https://github.com/piraeusdatastore/piraeus-operator/releases/latest/download/manifest.yaml"
 ```
 
+Wait for the operator:
 
-Ждём, пока он поднимется:
-
-```javascript
+```bash
 kubectl wait pod \
   --for=condition=Ready \
   -n piraeus-datastore \
   -l app.kubernetes.io/component=piraeus-operator
 ```
 
+Check:
 
-Проверка:
-
-```javascript
+```bash
 kubectl -n piraeus-datastore get pods
 ```
 
+## Create LINSTOR cluster (LinstorCluster CR)
 
-## Создаем LINSTOR Cluster (CR LinstorCluster)
+Minimal CR; operator brings up controller, satellites, DRBD, CSI, HA-controller:
 
-
-Минимальный CR – оператор сам поднимет controller, satellites, DRBD, CSI, HA-controller:
-
-```javascript
+```bash
 kubectl apply -f - <<'EOF'
 apiVersion: piraeus.io/v1
 kind: LinstorCluster
@@ -77,45 +69,33 @@ spec: {}
 EOF
 ```
 
+Wait until the cluster is ready:
 
-Ждем, пока кластер не будет готов:
-
-```javascript
-kubectl get linstorcluster linstorcluster -o yaml \
-  | yq '.status.conditions'
+```bash
+kubectl get linstorcluster linstorcluster -o yaml | yq '.status.conditions'
 ```
 
-Статус должен быть Available/Configured/Applied=True в conditions.
+Status conditions should show Available/Configured/Applied=True.
 
+Or:
 
-Или на коленке:
-
-```javascript
+```bash
 kubectl get linstorcluster linstorcluster
 ```
 
+Check pods:
 
-Смотрим поды:
-
-```javascript
+```bash
 kubectl -n piraeus-datastore get pods
 ```
 
+Expected: linstor-controller-..., linstor-satellite-... (DaemonSet), csi-controller-..., csi-node-..., ha-controller-...
 
-Должно быть:
+## Enable hostNetwork for Satellite (DRBD on node IP)
 
-* linstor-controller-...
-* linstor-satellite-... DaemonSet’ы (по одному pod на каждый node)
-* csi-controller-..., csi-node-...
-* ha-controller-...
+So DRBD does not depend on overlay; enable hostNetwork for satellites (official example):
 
-
-## Включаем hostNetwork для Satellite (DRBD по IP ноды)
-
-
-Чтобы DRBD не зависел от kube-ovn overlay, включаем hostNetwork для satellite’ов (официальный пример):
-
-```javascript
+```bash
 kubectl apply -f - <<'EOF'
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
@@ -129,14 +109,11 @@ spec:
 EOF
 ```
 
+After applying (replace NODE_NAME and run per node):
 
-После применения (заменить NODE_NAME и выполнить для каждой моды):
-
-```javascript
+```bash
 kubectl -n piraeus-datastore rollout restart daemonset linstor-satellite.{NODE_NAME}
 kubectl -n piraeus-datastore get pods -o wide
 ```
 
-
-Все Satellite pod’ы будут иметь IP хоста. DRBD-репликация пойдёт через host network, что нам и нужно.
-
+Satellite pods will use the host IP; DRBD replication will use the host network.
