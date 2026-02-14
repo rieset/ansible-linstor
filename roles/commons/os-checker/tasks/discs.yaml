@@ -1,0 +1,57 @@
+---
+- name: get all drbd disks from inventory or use drbd_backing_disk
+  set_fact:
+    drbd_disks: "{{ groups['drbd'] | default([drbd_backing_disk | basename | default('sdb')]) }}"
+
+- name: display drbd disks to check
+  debug:
+    msg: "Checking DRBD disks from [drbd] section: {{ drbd_disks }}"
+
+- name: check each drbd disk exists
+  stat:
+    path: "/dev/{{ item }}"
+  register: disk_checks
+  loop: "{{ drbd_disks }}"
+
+- name: collect found disks
+  set_fact:
+    found_disks: "{{ found_disks | default([]) + ['/dev/' + item.item] }}"
+  loop: "{{ disk_checks.results }}"
+  when: item.stat.exists
+
+- name: list available block devices for debugging
+  shell: lsblk -o NAME,SIZE,MODEL,SERIAL,ROTA,TYPE
+  register: available_disks
+  changed_when: false
+
+- name: fail if no drbd disks found
+  fail:
+    msg: |
+      No DRBD disks found on host {{ inventory_hostname }}.
+      
+      Looking for disks: {{ drbd_disks }}
+      Expected paths: {{ drbd_disks | map('regex_replace', '^(.*)$', '/dev/\\1') | list }}
+      
+      Available block devices:
+      {{ available_disks.stdout if available_disks.stdout is defined else '      none' }}
+      
+      HOW TO FIX:
+      
+      1. Check available disks on the host:
+         Run: lsblk -o NAME,SIZE,MODEL,SERIAL,ROTA,TYPE
+      
+      2. If this is a Virtual Machine:
+         - Add a new hard disk through the VM management console (vSphere, VirtualBox, KVM, etc.)
+         - The disk should appear as /dev/sdb, /dev/sdc, etc. after adding
+         - Reboot the VM if the disk doesn't appear immediately
+      
+      3. If disks exist but with different names:
+         - Update the [drbd] section in inventory file with correct disk names
+         - Or update drbd_backing_disk variable in group_vars/all.yaml
+      
+      Disk names are taken from: [drbd] section in inventory ({{ groups['drbd'] | default('not set') }}) or drbd_backing_disk variable ({{ drbd_backing_disk | default('not set') }}).
+  when: found_disks is not defined or found_disks | length == 0
+
+- name: display found drbd disks
+  debug:
+    msg: "Found DRBD disks: {{ found_disks }}"

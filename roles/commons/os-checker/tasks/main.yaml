@@ -1,0 +1,40 @@
+---
+- name: get OS name from /etc/os-release
+  shell: grep '^NAME=' /etc/os-release | sed 's/NAME=//' | tr -d '"'
+  register: os_name
+  changed_when: false
+
+- name: check if OS is Ubuntu
+  fail:
+    msg: "This playbook supports only Ubuntu. Detected OS: {{ os_name.stdout }}"
+  when: "'Ubuntu' not in os_name.stdout"
+
+- name: get Ubuntu version from /etc/os-release
+  shell: grep '^VERSION_ID=' /etc/os-release | sed 's/VERSION_ID=//' | tr -d '"'
+  register: ubuntu_version
+  changed_when: false
+  when: "'Ubuntu' in os_name.stdout"
+
+- name: extract Ubuntu version number (e.g., "24.04" -> 24.04)
+  set_fact:
+    ubuntu_version_float: "{{ ubuntu_version.stdout | regex_replace('^(\\d+)\\.(\\d+).*', '\\1.\\2') | float }}"
+  when: "'Ubuntu' in os_name.stdout"
+
+- name: fail if Ubuntu version is less than 24.04
+  fail:
+    msg: "Ubuntu version {{ ubuntu_version.stdout }} is not supported. This playbook requires Ubuntu 24.04 or newer. Please upgrade your system."
+  when:
+    - "'Ubuntu' in os_name.stdout"
+    - ubuntu_version_float is defined
+    - ubuntu_version_float | float < 24.04
+
+- name: display Ubuntu version info
+  debug:
+    msg: "Ubuntu version {{ ubuntu_version.stdout }} is supported. Continuing..."
+  when:
+    - "'Ubuntu' in os_name.stdout"
+    - ubuntu_version_float is defined
+    - ubuntu_version_float | float >= 24.04
+
+- name: check DRBD disk availability
+  include_tasks: discs.yaml

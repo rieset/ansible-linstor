@@ -1,0 +1,192 @@
+---
+# No wait for 3370 (REST/admin panel optional). GUI connects to controller when needed.
+
+- name: update apt cache to check for linstor-gui package
+  apt:
+    update_cache: true
+  when: groups['controller'] is defined
+
+- name: check if linstor-gui package is available
+  shell: apt-cache search linstor-gui | grep -q "^linstor-gui" || echo "not_found"
+  register: gui_package_check
+  changed_when: false
+  failed_when: false
+
+- name: install linstor-gui package if available
+  apt:
+    name: linstor-gui
+    state: present
+    update_cache: false
+  register: gui_install_result
+  when: gui_package_check.stdout != "not_found"
+  ignore_errors: true
+
+- name: check if linstor-gui service exists
+  shell: systemctl list-unit-files | grep -q linstor-gui.service || echo "not_found"
+  register: gui_service_check
+  changed_when: false
+  failed_when: false
+
+- name: enable and start LINSTOR GUI service
+  systemd:
+    name: linstor-gui
+    daemon_reload: true
+    enabled: true
+    state: started
+  register: gui_service_result
+  when: gui_service_check.stdout != "not_found"
+
+- name: display GUI service status
+  debug:
+    msg: "LINSTOR GUI service enabled and started successfully"
+  when: gui_service_result.changed | default(false)
+
+- name: check if GUI is available via Docker (alternative installation)
+  shell: docker ps -a | grep -q linstor-gui || echo "not_found"
+  register: gui_docker_check
+  changed_when: false
+  failed_when: false
+  when: gui_service_check.stdout == "not_found"
+
+- name: install docker if not installed (for GUI container)
+  apt:
+    name:
+      - docker.io
+      - docker-compose
+    state: present
+    update_cache: true
+  register: docker_install_result
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+  ignore_errors: true
+
+- name: start docker service
+  systemd:
+    name: docker
+    enabled: true
+    state: started
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+    - docker_install_result.changed | default(false)
+
+- name: create directory for linstor-gui
+  file:
+    path: /opt/linstor-gui
+    state: directory
+    mode: '0755'
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+
+- name: set fact for controller endpoints with ports
+  set_fact:
+    controller_endpoints: "{{ groups['controller'] | map('regex_replace', '^(.*)$', '\\1:3370') | join(',') }}"
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+    - groups['controller'] is defined
+
+- name: create docker-compose file for linstor-gui
+  copy:
+    content: |
+      version: '3'
+      services:
+        linstor-gui:
+          image: linbit/linstor-gui:latest
+          container_name: linstor-gui
+          ports:
+            - "8080:8080"
+          environment:
+            - LINSTOR_CONTROLLERS={{ controller_endpoints | default(groups['controller'] | join(',')) }}
+          restart: unless-stopped
+    dest: /opt/linstor-gui/docker-compose.yml
+    mode: '0644'
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+
+- name: check docker-compose command availability
+  shell: |
+    if command -v docker-compose >/dev/null 2>&1; then
+      echo "docker-compose"
+    elif docker compose version >/dev/null 2>&1; then
+      echo "docker compose"
+    else
+      echo "not_found"
+    fi
+  register: docker_compose_cmd
+  changed_when: false
+  failed_when: false
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+
+- name: start linstor-gui container using docker-compose (legacy)
+  shell: |
+    cd /opt/linstor-gui && yes | docker-compose up -d --force-recreate --remove-orphans 2>&1 || true
+  register: gui_container_result
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+    - docker_compose_cmd.stdout == "docker-compose"
+  failed_when: false
+  changed_when: gui_container_result.rc == 0
+
+- name: start linstor-gui container using docker compose (v2)
+  shell: |
+    cd /opt/linstor-gui && docker compose up -d --force-recreate --remove-orphans 2>&1 || true
+  register: gui_container_result_v2
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+    - docker_compose_cmd.stdout == "docker compose"
+  failed_when: false
+  changed_when: gui_container_result_v2.rc == 0
+
+- name: check if container is running after start attempt
+  shell: docker ps | grep -q linstor-gui || echo "not_running"
+  register: gui_container_running_check
+  changed_when: false
+  failed_when: false
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+
+- name: display container start errors if any
+  debug:
+    msg: |
+      Container start attempt output:
+      {{ gui_container_result.stdout | default(gui_container_result_v2.stdout | default('N/A')) }}
+      {{ gui_container_result.stderr | default(gui_container_result_v2.stderr | default('')) }}
+      Container running: {{ 'Yes' if gui_container_running_check.stdout != 'not_running' else 'No' }}
+      {% if gui_container_running_check.stdout == 'not_running' %}
+      Note: Docker image linbit/linstor-gui:latest is not available.
+      LINSTOR GUI should be installed as a package from LINBIT repositories.
+      Please ensure LINBIT repositories are properly configured and try installing manually:
+      - apt update
+      - apt install linstor-gui
+      - systemctl enable --now linstor-gui
+      {% endif %}
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+
+- name: set fact for GUI container result
+  set_fact:
+    gui_container_final_result: "{{ gui_container_result | default(gui_container_result_v2 | default({})) }}"
+  when:
+    - gui_service_check.stdout == "not_found"
+    - gui_docker_check.stdout == "not_found"
+
+- name: display GUI installation summary
+  debug:
+    msg: |
+      LINSTOR GUI installation completed:
+      - Installation method: {{ 'Package' if gui_service_check.stdout != 'not_found' else ('Docker (existing)' if gui_docker_check.stdout != 'not_found' else 'Docker (newly installed)') }}
+      - Service status: {{ 'Running' if gui_service_result.changed | default(false) or gui_container_result.changed | default(false) or gui_container_result_v2.changed | default(false) else 'Check manually' }}
+      - Access URL: http://{{ inventory_hostname }}:8080
+      - Controllers: {{ groups['controller'] | join(', ') }}
+      - Controller endpoints: {{ controller_endpoints | default('N/A') }}
+

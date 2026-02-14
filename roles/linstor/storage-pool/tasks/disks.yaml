@@ -1,0 +1,135 @@
+---
+- name: get all drbd disks from inventory or use drbd_backing_disk
+  set_fact:
+    drbd_disks: "{{ groups['drbd'] | default([drbd_backing_disk | basename | default('sdb')]) }}"
+
+- name: check each drbd disk exists
+  stat:
+    path: "/dev/{{ item }}"
+  register: disk_checks
+  loop: "{{ drbd_disks }}"
+
+- name: collect found disks
+  set_fact:
+    found_disks: "{{ found_disks | default([]) + ['/dev/' + item.item] }}"
+  loop: "{{ disk_checks.results }}"
+  when: item.stat.exists
+
+- name: fail if no drbd disks found
+  fail:
+    msg: |
+      No DRBD disks found on host {{ inventory_hostname }} for storage pool.
+      
+      Looking for disks: {{ drbd_disks }}
+      Expected paths: {{ drbd_disks | map('regex_replace', '^(.*)$', '/dev/\\1') | list }}
+      
+      HOW TO FIX:
+      1. Check available disks on the host: lsblk -o NAME,SIZE,MODEL,SERIAL,ROTA,TYPE
+      2. If this is a Virtual Machine: Add a new hard disk through the VM management console
+      3. Update the [drbd] section in inventory file with correct disk names
+      4. Or update drbd_backing_disk variable in group_vars/all.yaml
+  when: found_disks is not defined or found_disks | length == 0
+
+- name: display found drbd disks for setup
+  debug:
+    msg: "Setting up DRBD disks for LINSTOR storage pool: {{ found_disks }}"
+
+- name: check if physical volumes already exist
+  command: pvs {{ item }} --noheadings -o pv_name
+  register: pv_checks
+  loop: "{{ found_disks }}"
+  changed_when: false
+  failed_when: false
+
+- name: create physical volumes on disks that don't have PV yet
+  command: pvcreate {{ item.item }}
+  loop: "{{ pv_checks.results }}"
+  when: item.rc != 0
+  register: pvcreate_result
+
+- name: display pvcreate results
+  debug:
+    var: pvcreate_result.results
+  when: pvcreate_result.results is defined
+
+- name: check if volume group drbdpool exists
+  command: vgs drbdpool --noheadings -o vg_name
+  register: vg_check
+  changed_when: false
+  failed_when: false
+
+- name: create volume group drbdpool with all found disks
+  command: vgcreate drbdpool {{ found_disks | join(' ') }}
+  when: vg_check.rc != 0 or vg_check.stdout | trim == ""
+  register: vgcreate_result
+
+- name: display vgcreate result
+  debug:
+    msg: "Volume group drbdpool created with disks: {{ found_disks | join(', ') }}"
+  when: vgcreate_result is defined
+
+- name: get existing PVs in drbdpool
+  command: vgs drbdpool --noheadings -o pv_name
+  register: existing_pvs
+  changed_when: false
+  failed_when: false
+  when: vg_check.rc == 0 and vg_check.stdout | trim != ""
+
+- name: extend volume group with new disks
+  command: vgextend drbdpool {{ item }}
+  loop: "{{ found_disks }}"
+  when: 
+    - vg_check.rc == 0
+    - vg_check.stdout | trim != ""
+    - existing_pvs is defined
+    - item not in (existing_pvs.stdout | split | list)
+  register: vgextend_result
+  ignore_errors: true
+
+- name: display vgextend results
+  debug:
+    var: vgextend_result.results
+  when: vgextend_result.results is defined
+
+- name: check if thin pool thinpool already exists
+  command: lvs drbdpool/thinpool --noheadings -o lv_name
+  register: thinpool_check
+  changed_when: false
+  failed_when: false
+
+- name: create thin pool thinpool (95% of VG)
+  command: lvcreate -l 95%VG -T drbdpool/thinpool
+  when: thinpool_check.rc != 0 or thinpool_check.stdout | trim == ""
+  register: thinpool_create_result
+
+- name: display thinpool create result
+  debug:
+    msg: "Thin pool drbdpool/thinpool created successfully (95% of VG)"
+  when: thinpool_create_result is defined
+
+- name: extract disk names from found_disks (remove /dev/ prefix)
+  set_fact:
+    disk_names_for_scheduler: "{{ found_disks | map('basename') | list }}"
+
+- name: configure I/O scheduler for DRBD disks
+  shell: |
+    echo mq-deadline | tee /sys/block/{{ item }}/queue/scheduler
+    echo 0 | tee /sys/block/{{ item }}/queue/add_random
+    echo 1 | tee /sys/block/{{ item }}/queue/nomerges
+  loop: "{{ disk_names_for_scheduler }}"
+  register: scheduler_config
+
+- name: display scheduler configuration results
+  debug:
+    var: scheduler_config.results
+  when: scheduler_config.results is defined
+
+- name: display final disk setup info
+  debug:
+    msg: |
+      DRBD disks setup completed on host {{ inventory_hostname }}:
+      - Physical volumes created on: {{ found_disks | join(', ') }}
+      - Volume group: drbdpool
+      - Thin pool: drbdpool/thinpool (95% of VG)
+      - I/O scheduler configured: mq-deadline for disks {{ disk_names_for_scheduler | join(', ') }}
+      - Ready for LINSTOR storage pool creation

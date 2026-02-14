@@ -1,0 +1,75 @@
+---
+- name: check if linstor-controller service exists
+  shell: systemctl list-unit-files | grep -q linstor-controller.service
+  register: service_check
+  changed_when: false
+  failed_when: false
+
+- name: enable and start LINSTOR Controller service
+  systemd:
+    name: linstor-controller
+    daemon_reload: true
+    enabled: true
+    state: started
+  register: controller_service_result
+  when: service_check.rc == 0
+
+- name: display controller service status
+  debug:
+    msg: "LINSTOR Controller service enabled and started successfully"
+  when: controller_service_result.changed | default(false)
+
+- name: fail if linstor-controller service not found
+  fail:
+    msg: "linstor-controller service not found. Please ensure linstor-controller package is installed. The pre-install role should install it automatically."
+  when: service_check.rc != 0
+
+# Readiness via SSH: только проверка сервиса внутри машины, без портов.
+- name: wait for controller service to be active
+  command: systemctl is-active linstor-controller
+  register: controller_active
+  until: controller_active.stdout == 'active'
+  retries: 30
+  delay: 2
+  changed_when: false
+  when: service_check.rc == 0
+
+# - name: check if linstor-controller service exists
+#   shell: systemctl list-unit-files | grep -q linstor-controller.service
+#   register: service_check
+#   changed_when: false
+#   failed_when: false
+
+# - name: enable and start LINSTOR Controller
+#   systemd:
+#     name: linstor-controller
+#     daemon_reload: yes
+#     state: restarted
+#     enabled: yes
+#   register: controller_start_result
+#   when: service_check.rc == 0
+
+# - name: display controller start result
+#   debug:
+#     var: controller_start_result
+#   when: controller_start_result is defined
+
+# - name: fail if linstor-controller service not found
+#   fail:
+#     msg: "linstor-controller service not found. Please ensure linstor-controller package is installed."
+#   when: service_check.rc != 0
+
+# - name: sleep for 30 seconds and continue with play
+#   wait_for: timeout=30
+
+# - name: initialize the LINSTOR control node as pure Controller
+#   shell: linstor node create {{ ansible_nodename }} {{ ansible_all_ipv4_addresses | ipaddr(drbd_replication_network) | first }} --node-type Controller
+#   when: "'satellite' not in group_names"
+#   register: linstor_create_result
+#   failed_when: ( linstor_create_result.rc not in [ 0, 10 ] )
+
+# - name: initialize the LINSTOR control node as a Combined type
+#   shell: linstor node create {{ ansible_nodename }} {{ ansible_all_ipv4_addresses | ipaddr(drbd_replication_network) | first }} --node-type Combined
+#   when: "'satellite' in group_names"
+#   register: linstor_create_result
+#   failed_when: ( linstor_create_result.rc not in [ 0, 10 ] )

@@ -1,0 +1,35 @@
+---
+- name: get node name for storage pool creation
+  set_fact:
+    node_name: "{{ hostvars[inventory_hostname]['ansible_nodename'] | default(inventory_hostname) }}"
+
+- name: check if drbdpool/thinpool exists (verify disk initialization)
+  command: lvs drbdpool/thinpool --noheadings -o lv_name
+  register: thinpool_check
+  changed_when: false
+  failed_when: false
+
+- name: fail if thin pool not found
+  fail:
+    msg: |
+      Thin pool drbdpool/thinpool not found on host {{ inventory_hostname }}.
+      Disk initialization (disks.yaml) should be executed before creating storage pool.
+      Please ensure disks.yaml was executed successfully.
+  when: thinpool_check.rc != 0 or thinpool_check.stdout | trim == ""
+
+- name: create LINSTOR storage pool (lvm-thin) on first controller
+  shell: |
+    linstor storage-pool create lvmthin {{ node_name }} lvm-thin drbdpool/thinpool
+  register: storage_pool_create_result
+  delegate_to: "{{ groups['controller'][0] }}"
+  failed_when: storage_pool_create_result.rc not in [0, 10]
+
+- name: display storage pool creation result
+  debug:
+    msg: |
+      Storage pool creation result for {{ inventory_hostname }}:
+      - Node: {{ node_name }}
+      - Pool: lvm-thin
+      - Volume group: drbdpool/thinpool
+      - Result: {{ 'Success' if storage_pool_create_result.rc == 0 else ('Already exists' if storage_pool_create_result.rc == 10 else 'Failed') }}
+      {{ 'Error: ' + storage_pool_create_result.stderr if storage_pool_create_result.rc not in [0, 10] and storage_pool_create_result.stderr is defined else '' }}

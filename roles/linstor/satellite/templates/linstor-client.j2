@@ -1,0 +1,2 @@
+[global]
+controllers={% for node in groups['controller'] %}{{ node }}{% if not loop.last %},{% endif %}{% endfor %}

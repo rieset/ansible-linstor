@@ -1,0 +1,130 @@
+---
+- name: check for existing LINBIT PPA configuration files by pattern
+  find:
+    paths: /etc/apt/sources.list.d
+    patterns: "*linbit*"
+  register: existing_ppa_files_by_pattern
+
+- name: find all files in sources.list.d containing linbit references
+  shell: grep -l "linbit\|ppa.launchpadcontent.net/linbit" /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+  register: existing_ppa_files_by_content
+  changed_when: false
+  failed_when: false
+
+- name: remove existing conflicting LINBIT PPA configurations (by pattern)
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ existing_ppa_files_by_pattern.files | default([]) }}"
+  when: existing_ppa_files_by_pattern.files | default([]) | length > 0
+  register: removed_ppa_files_by_pattern
+
+- name: remove existing conflicting LINBIT PPA configurations (by content)
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ existing_ppa_files_by_content.stdout_lines | default([]) }}"
+  when: existing_ppa_files_by_content.stdout_lines | default([]) | length > 0
+  register: removed_ppa_files_by_content
+
+- name: find existing GPG key files for LINBIT PPA
+  find:
+    paths: /etc/apt/trusted.gpg.d
+    patterns: "linbit*"
+  register: existing_gpg_files
+  ignore_errors: true
+
+- name: remove existing GPG key files for LINBIT PPA
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ existing_gpg_files.files | default([]) }}"
+  when: existing_gpg_files.files | default([]) | length > 0
+  ignore_errors: true
+
+- name: display removed conflicting files info
+  debug:
+    msg: |
+      Removed conflicting LINBIT PPA configurations:
+      - PPA source files (by pattern): {{ existing_ppa_files_by_pattern.files | default([]) | map(attribute='path') | list }}
+      - PPA source files (by content): {{ existing_ppa_files_by_content.stdout_lines | default([]) }}
+      - GPG key files: {{ existing_gpg_files.files | default([]) | map(attribute='path') | list }}
+  when: (existing_ppa_files_by_pattern.files | default([]) | length > 0) or (existing_ppa_files_by_content.stdout_lines | default([]) | length > 0) or (existing_gpg_files.files | default([]) | length > 0)
+
+- name: get kernel version
+  shell: uname -r
+  register: kernel_version
+  changed_when: false
+
+- name: install linux headers for current kernel (required for drbd-dkms)
+  apt:
+    name: "linux-headers-{{ kernel_version.stdout }}"
+    state: present
+  register: headers_install_result
+
+- name: install software-properties-common (required for add-apt-repository)
+  apt:
+    name: software-properties-common
+    state: present
+  register: install_software_properties
+
+- name: add LINBIT PPA repository
+  apt_repository:
+    repo: ppa:linbit/linbit-drbd9-stack
+    state: present
+    update_cache: false
+  register: add_ppa_result
+
+- name: update apt cache after adding PPA
+  apt:
+    update_cache: true
+  register: apt_update_after_ppa
+
+- name: install DRBD and LVM packages
+  apt:
+    name:
+      - drbd-utils
+      - drbd-dkms
+      - lvm2
+    state: present
+  register: drbd_packages_install
+
+- name: install LINBIT packages from lb_deb_pkgs variable
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ lb_deb_pkgs | default([]) }}"
+  register: linstor_packages_install
+  when: lb_deb_pkgs is defined and lb_deb_pkgs | length > 0
+
+- name: display installed LINBIT packages
+  debug:
+    msg: "Installed LINBIT packages: {{ lb_deb_pkgs | default('not specified') }}"
+  when: linstor_packages_install.changed | default(false)
+
+- name: load DRBD kernel module
+  modprobe:
+    name: drbd
+    state: present
+  register: drbd_module_load
+
+- name: display installation summary
+  debug:
+    msg: |
+      DRBD installation completed:
+      - Kernel headers: {{ kernel_version.stdout }}
+      - PPA repository: ppa:linbit/linbit-drbd9-stack
+      - Packages installed: drbd-utils, drbd-dkms, lvm2
+      - DRBD module loaded: {{ 'yes' if drbd_module_load.changed else 'already loaded' }}
+
+- name: ensure DRBD module loads at boot
+  copy:
+    content: "drbd\n"
+    dest: /etc/modules-load.d/drbd.conf
+    mode: '0644'
+  register: drbd_module_config
+
+- name: display DRBD module configuration
+  debug:
+    msg: "DRBD module will be automatically loaded at boot via /etc/modules-load.d/drbd.conf"
+  when: drbd_module_config.changed

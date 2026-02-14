@@ -1,0 +1,4 @@
+---
+dependencies:
+  - { role: commons/pre-install,
+      lb_deb_pkgs: ["drbd-dkms", "drbd-utils", "linstor-controller"] }

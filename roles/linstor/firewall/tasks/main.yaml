@@ -1,0 +1,85 @@
+---
+# By default: reset UFW, then allow only SSH (22) and LINSTOR ports (no source restriction for now).
+# Port 3370 only where GUI runs (admin); controller get 3376; satellite get 3366, 7000:8000.
+
+- name: check if UFW is installed
+  command: which ufw
+  register: ufw_installed
+  changed_when: false
+  failed_when: false
+  when: linstor_configure_ufw | default(true) | bool
+
+- name: reset UFW (remove all rules; UFW will be disabled after this)
+  shell: yes | ufw reset
+  when:
+    - linstor_configure_ufw | default(true) | bool
+    - linstor_ufw_reset_then_allow | default(true) | bool
+    - ufw_installed is defined
+    - ufw_installed.rc == 0
+
+- name: allow SSH (port 22)
+  ufw:
+    rule: allow
+    proto: tcp
+    port: "22"
+  when:
+    - linstor_configure_ufw | default(true) | bool
+    - linstor_ufw_reset_then_allow | default(true) | bool
+    - ufw_installed is defined
+    - ufw_installed.rc == 0
+
+- name: allow LINSTOR Controller REST API (port 3370, only where GUI runs)
+  ufw:
+    rule: allow
+    proto: tcp
+    port: "3370"
+  when:
+    - linstor_configure_ufw | default(true) | bool
+    - linstor_ufw_reset_then_allow | default(true) | bool
+    - ufw_installed is defined
+    - ufw_installed.rc == 0
+    - inventory_hostname in groups.get('admin', [])
+
+- name: allow LINSTOR Controller/Satellite connections (port 3376)
+  ufw:
+    rule: allow
+    proto: tcp
+    port: "3376"
+  when:
+    - linstor_configure_ufw | default(true) | bool
+    - linstor_ufw_reset_then_allow | default(true) | bool
+    - ufw_installed is defined
+    - ufw_installed.rc == 0
+    - inventory_hostname in groups.get('controller', [])
+
+- name: allow LINSTOR Satellite/Controller connections (port 3366)
+  ufw:
+    rule: allow
+    proto: tcp
+    port: "3366"
+  when:
+    - linstor_configure_ufw | default(true) | bool
+    - linstor_ufw_reset_then_allow | default(true) | bool
+    - ufw_installed is defined
+    - ufw_installed.rc == 0
+    - inventory_hostname in groups.get('satellite', [])
+
+- name: allow DRBD replication (ports 7000-8000)
+  ufw:
+    rule: allow
+    proto: tcp
+    port: "7000:8000"
+  when:
+    - linstor_configure_ufw | default(true) | bool
+    - linstor_ufw_reset_then_allow | default(true) | bool
+    - ufw_installed is defined
+    - ufw_installed.rc == 0
+    - inventory_hostname in groups.get('satellite', [])
+
+- name: enable UFW
+  command: ufw --force enable
+  when:
+    - linstor_configure_ufw | default(true) | bool
+    - linstor_ufw_reset_then_allow | default(true) | bool
+    - ufw_installed is defined
+    - ufw_installed.rc == 0

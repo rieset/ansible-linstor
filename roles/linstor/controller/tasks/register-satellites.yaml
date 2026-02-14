@@ -1,0 +1,110 @@
+---
+# Run AFTER satellite play: satellites are already running, so they connect shortly after node records exist.
+# Creates node records on controller and waits until all satellites report Online.
+
+- name: set fact for first controller host
+  set_fact:
+    first_controller: "{{ groups['controller'][0] }}"
+  when:
+    - groups['controller'] is defined
+    - groups['controller'] | length > 0
+  run_once: true
+
+- name: create satellite nodes in LINSTOR cluster (executed on first controller only)
+  shell: |
+    linstor node create {{ hostvars[item]['ansible_nodename'] | default(item) }} {{ (hostvars[item]['ansible_all_ipv4_addresses'] | ipaddr(drbd_replication_network) | list | first) | default(hostvars[item]['ansible_default_ipv4']['address'] | default(item)) }} --node-type {{ 'Combined' if item in groups.get('controller', []) else 'Satellite' }}
+  loop: "{{ groups['satellite'] | default([]) }}"
+  delegate_to: "{{ first_controller | default(groups['controller'][0]) }}"
+  run_once: true
+  register: satellite_node_create_results
+  failed_when: false
+  when:
+    - groups['satellite'] is defined
+    - groups['satellite'] | length > 0
+    - groups['controller'] is defined
+    - groups['controller'] | length > 0
+    - first_controller is defined
+
+- name: display satellite node creation results
+  debug:
+    msg: |
+      Controller: {{ first_controller | default(groups['controller'][0]) }}
+      Satellite Node: {{ item.item }}
+      Hostname: {{ hostvars[item.item]['ansible_nodename'] | default(item.item) }}
+      IP: {{ (hostvars[item.item]['ansible_all_ipv4_addresses'] | ipaddr(drbd_replication_network)) | first | default(hostvars[item.item]['ansible_default_ipv4']['address'] | default('N/A')) }}
+      Type: {{ 'Combined' if item.item in groups.get('controller', []) else 'Satellite' }}
+      Result: {{ 'Success' if item.rc == 0 else ('Already exists' if item.rc == 10 else 'Failed') }}
+      {{ 'Error: ' + item.stderr if item.rc not in [0, 10] and item.stderr is defined else '' }}
+  loop: "{{ satellite_node_create_results.results | default([]) }}"
+  when: satellite_node_create_results.results is defined
+  run_once: true
+
+- name: build list of expected satellite node names for readiness check
+  set_fact:
+    expected_satellite_nodenames: "{{ expected_satellite_nodenames | default([]) + [hostvars[item]['ansible_nodename'] | default(item)] }}"
+  loop: "{{ groups['satellite'] | default([]) }}"
+  run_once: true
+  when: satellite_node_create_results.results is defined
+
+- name: show what we wait for (expected node names and current linstor node list)
+  shell: |
+    echo "=== Expected node names (must appear as Online in linstor node list) ==="
+    echo "{{ expected_satellite_nodenames | default([]) | join(', ') }}"
+    echo ""
+    echo "=== Current 'linstor node list' output ==="
+    linstor node list 2>&1 || true
+  register: readiness_debug
+  changed_when: false
+  delegate_to: "{{ first_controller | default(groups['controller'][0]) }}"
+  run_once: true
+  when:
+    - satellite_node_create_results.results is defined
+    - expected_satellite_nodenames is defined
+    - expected_satellite_nodenames | length > 0
+
+- name: display readiness check criteria and current state
+  debug:
+    msg: "{{ readiness_debug.stdout_lines | default([]) }}"
+  when: readiness_debug is defined
+
+# linstor node list: table with ┊ name ┊ ... ┊ State ┊; we need line with nodename and "Online". grep -w for word match.
+- name: wait for satellite nodes to be online (poll linstor until all expected nodes show Online)
+  shell: |
+    set -e
+    out=$(linstor node list 2>/dev/null || true)
+    for n in {{ expected_satellite_nodenames | default([]) | join(' ') }}; do
+      if ! echo "$out" | grep -w "$n" | grep -qi "Online"; then
+        echo "FAIL: node '$n' not found as Online. Current linstor node list:"
+        echo "$out"
+        exit 1
+      fi
+    done
+    exit 0
+  register: satellites_online
+  until: satellites_online.rc == 0
+  retries: 24
+  delay: 5
+  delegate_to: "{{ first_controller | default(groups['controller'][0]) }}"
+  run_once: true
+  when:
+    - satellite_node_create_results.results is defined
+    - expected_satellite_nodenames is defined
+    - expected_satellite_nodenames | length > 0
+
+- name: check satellite nodes connection status
+  shell: |
+    linstor node list
+  register: node_status_check
+  changed_when: false
+  failed_when: false
+  when: satellite_node_create_results.results is defined
+  delegate_to: "{{ first_controller | default(groups['controller'][0]) }}"
+  run_once: true
+
+- name: display satellite nodes connection status
+  debug:
+    msg: |
+      Satellite nodes status on controller {{ first_controller | default(groups['controller'][0]) }}:
+      {{ node_status_check.stdout if node_status_check.stdout is defined else 'Unable to check status' }}
+  when: node_status_check is defined
+  run_once: true

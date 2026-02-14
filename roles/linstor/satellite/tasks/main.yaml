@@ -1,0 +1,113 @@
+---
+- name: check if linstor-satellite service exists
+  shell: systemctl list-unit-files | grep -q linstor-satellite.service
+  register: service_check
+  changed_when: false
+  failed_when: false
+
+- name: enable and start LINSTOR Satellite service
+  systemd:
+    name: linstor-satellite
+    daemon_reload: true
+    enabled: true
+    state: started
+  register: satellite_service_result
+  when: service_check.rc == 0
+
+- name: display satellite service status
+  debug:
+    msg: "LINSTOR Satellite service enabled and started successfully"
+  when: satellite_service_result.changed | default(false)
+
+- name: fail if linstor-satellite service not found
+  fail:
+    msg: "linstor-satellite service not found. Please ensure linstor-satellite package is installed. The pre-install role should install it automatically."
+  when: service_check.rc != 0
+
+- name: ensure linstor config directory exists
+  file:
+    path: /etc/linstor
+    state: directory
+    mode: '0755'
+
+- name: setup linstor-client.conf with all controllers
+  template:
+    src: linstor-client.j2
+    dest: /etc/linstor/linstor-client.conf
+    mode: '0644'
+  when:
+    - groups['controller'] is defined
+    - groups['controller'] | length > 0
+
+- name: restart linstor-satellite service after config update
+  systemd:
+    name: linstor-satellite
+    state: restarted
+  when:
+    - service_check.rc == 0
+    - groups['controller'] is defined
+    - groups['controller'] | length > 0
+
+# Readiness via SSH: только проверка сервиса внутри машины, без портов.
+- name: wait for satellite service to be active
+  command: systemctl is-active linstor-satellite
+  register: satellite_active
+  until: satellite_active.stdout == 'active'
+  retries: 30
+  delay: 2
+  changed_when: false
+  when: service_check.rc == 0
+
+# - name: gather facts from controller (needed when playbook --limit excludes controller)
+#   setup:
+#   delegate_to: "{{item}}"
+#   delegate_facts: True
+#   loop: "{{groups['controller']}}"
+
+# - name: setup linstor-client.conf
+#   template: src=linstor-client.j2 dest=/etc/linstor/linstor-client.conf
+
+# - name: check if UFW is running
+#   shell: ufw status
+#   changed_when: false
+#   register: ufw
+
+# - name: ufw ports for DRBD
+#   ufw:
+#     rule: allow
+#     proto: tcp
+#     port: 7000:8000
+#   when: ufw.rc is defined and 'inactive' not in ufw.stdout
+
+# - name: ufw ports for LINSTOR Satellite
+#   ufw:
+#     rule: allow
+#     proto: tcp
+#     port: "3366"
+#   when: ufw.rc is defined and 'inactive' not in ufw.stdout
+
+# - name: enable and start LINSTOR Satellite
+#   systemd:
+#     name: linstor-satellite.service
+#     daemon_reload: yes
+#     state: restarted
+#     enabled: yes
+
+# - name: sleep for 30 seconds and continue with play
+#   wait_for: timeout=30
+
+# - name: join LINSTOR cluster as satellite node
+#   shell: linstor node create {{ ansible_nodename }} {{ ansible_all_ipv4_addresses | ipaddr(drbd_replication_network) | first }} --node-type Satellite
+#   register: linstor_create_result
+#   failed_when: ( linstor_create_result.rc not in [ 0, 10 ] )
+
+# - name: create thin file backed storage pool directory
+#   file:
+#     path: /var/lib/linstor/file-thin-storage-pool
+#     state: directory
+#     mode: '0755'
+
+# - name: create the storage pool for file-thin
+#   shell: linstor storage-pool create filethin {{ ansible_nodename }} file-thin /var/lib/linstor/file-thin-storage-pool
+#   register: storage_pool_create_result
+#   failed_when: ( storage_pool_create_result.rc not in [ 0, 10 ] )

@@ -1,0 +1,5 @@
+---
+dependencies:
+  - { role: commons/pre-install,
+      lb_deb_pkgs: ["linstor-client"] }
+

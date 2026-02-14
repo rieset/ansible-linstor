@@ -1,0 +1,3 @@
+---
+- name: register nodes and install packages
+  include_tasks: pkg.yaml
